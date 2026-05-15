@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+from typing import Optional
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.task_instance import TaskInstance
+from app.models.task_result import TaskResult
+from app.utils.normalize import normalize
+
+
+async def check_duplicate(
+    db: AsyncSession,
+    title_norm: str,
+    journal_norm: str,
+    year: int | None,
+    meta_task_id: int,
+    current_instance_id: int,
+) -> Optional[int]:
+    if year is None:
+        return None
+    stmt = select(TaskResult).where(
+        TaskResult.title_normalized == title_norm,
+        TaskResult.source_journal_normalized == journal_norm,
+        TaskResult.publish_year == year,
+    ).limit(1)
+    result = await db.execute(stmt)
+    existing = result.scalar_one_or_none()
+    if not existing:
+        return None
+    inst_stmt = select(TaskInstance).where(TaskInstance.id == existing.task_instance_id)
+    inst_result = await db.execute(inst_stmt)
+    existing_instance = inst_result.scalar_one_or_none()
+    if existing_instance and existing_instance.meta_task_id == meta_task_id:
+        return existing.id
+    return None
+
+
+async def batch_check_and_mark(
+    db: AsyncSession,
+    records: list[dict],
+    meta_task_id: int,
+    instance_id: int,
+) -> tuple[list[dict], int]:
+    duplicates = 0
+    for record in records:
+        title = record.get("title", "") or ""
+        journal = record.get("source_journal", "") or ""
+        year = record.get("publish_year")
+        title_norm = normalize(title)
+        journal_norm = normalize(journal)
+        record["title_normalized"] = title_norm
+        record["source_journal_normalized"] = journal_norm
+        dup_ref = await check_duplicate(
+            db, title_norm, journal_norm, year, meta_task_id, instance_id,
+        )
+        if dup_ref is not None:
+            record["is_duplicate"] = True
+            record["duplicate_ref_id"] = dup_ref
+            duplicates += 1
+        else:
+            record["is_duplicate"] = False
+            record["duplicate_ref_id"] = None
+    return records, duplicates

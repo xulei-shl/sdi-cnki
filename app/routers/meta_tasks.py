@@ -1,0 +1,292 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, model_validator
+from sqlalchemy import select, func, desc
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.database import get_db
+from app.models.meta_task import MetaTask
+from app.models.meta_task_llm_config import MetaTaskLlmConfig
+from app.models.task_instance import TaskInstance
+from app.models.user import User
+from app.utils.exceptions import NotFoundError, ValidationError
+from app.utils.oplog import log_operation
+from app.routers import get_current_user_from_header, require_admin_user
+
+router = APIRouter()
+
+MAX_EXPORT_VALUES = {50, 100, 150, 200, 250, 300, 350, 400, 450, 500}
+DATE_RANGE_VALUES = {"week", "month", "half-year", "year", "ytd", "last-year"}
+
+
+def validate_search_params(params: dict) -> None:
+    max_export = params.get("max_export")
+    if max_export is None:
+        raise ValidationError("max_export 为必填项")
+    if max_export not in MAX_EXPORT_VALUES:
+        raise ValidationError(f"max_export 必须为 {sorted(MAX_EXPORT_VALUES)} 中的一个")
+    date_range = params.get("date_range")
+    year_from = params.get("year_from")
+    year_to = params.get("year_to")
+    if date_range and (year_from is not None or year_to is not None):
+        raise ValidationError("date_range 与 year_from/year_to 互斥，不能同时传入")
+    if date_range and date_range not in DATE_RANGE_VALUES:
+        raise ValidationError(f"date_range 必须为 {sorted(DATE_RANGE_VALUES)} 中的一个")
+
+
+class MetaTaskCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    search_params: dict
+    prompt_template_id: Optional[int] = None
+    llm_config_ids: list[int]
+    schedule_cron: Optional[str] = None
+    is_periodic: bool = False
+
+    @model_validator(mode="after")
+    def _validate(self):
+        validate_search_params(self.search_params)
+        return self
+
+
+class MetaTaskUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    search_params: Optional[dict] = None
+    prompt_template_id: Optional[int] = None
+    llm_config_ids: Optional[list[int]] = None
+    schedule_cron: Optional[str] = None
+    is_periodic: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+    @model_validator(mode="after")
+    def _validate(self):
+        if self.search_params is not None:
+            validate_search_params(self.search_params)
+        return self
+
+
+@router.get("")
+async def list_meta_tasks(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    keyword: Optional[str] = Query(None),
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    where = []
+    if current_user.role != "admin":
+        where.append(MetaTask.creator_id == current_user.id)
+    if keyword:
+        where.append(MetaTask.name.ilike(f"%{keyword}%"))
+    stmt = (
+        select(MetaTask)
+        .where(*where)
+        .options(selectinload(MetaTask.llm_config_links).selectinload(MetaTaskLlmConfig.llm_config))
+        .order_by(desc(MetaTask.created_at))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    result = await db.execute(stmt)
+    tasks = result.unique().scalars().all()
+    count_stmt = select(func.count(MetaTask.id)).where(*where)
+    total = (await db.execute(count_stmt)).scalar()
+
+    items = []
+    for t in tasks:
+        llm_names = [link.llm_config.name for link in t.llm_config_links if link.llm_config]
+        inst_count = await db.execute(
+            select(func.count(TaskInstance.id)).where(TaskInstance.meta_task_id == t.id)
+        )
+        items.append({
+            "id": t.id,
+            "name": t.name,
+            "description": t.description,
+            "search_params": t.search_params,
+            "prompt_template_id": t.prompt_template_id,
+            "llm_config_names": llm_names,
+            "creator_id": t.creator_id,
+            "is_active": t.is_active,
+            "execution_count": t.execution_count,
+            "last_executed_at": t.last_executed_at.isoformat() if t.last_executed_at else None,
+            "created_at": t.created_at.isoformat() if t.created_at else "",
+        })
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.post("")
+async def create_meta_task(
+    data: MetaTaskCreate,
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    if not data.llm_config_ids:
+        raise ValidationError("At least one LLM config is required")
+    task = MetaTask(
+        name=data.name,
+        description=data.description,
+        creator_id=current_user.id,
+        prompt_template_id=data.prompt_template_id,
+        search_params=json.dumps(data.search_params, ensure_ascii=False),
+        schedule_cron=data.schedule_cron,
+        is_periodic=data.is_periodic,
+        is_active=True,
+    )
+    db.add(task)
+    await db.flush()
+    for idx, llm_id in enumerate(data.llm_config_ids):
+        link = MetaTaskLlmConfig(meta_task_id=task.id, llm_config_id=llm_id, priority=idx)
+        db.add(link)
+    await db.commit()
+    await db.refresh(task)
+    await log_operation(db, current_user.id, "create", "meta_task", task.id, f"Created meta task {task.name}")
+    return {"id": task.id, "name": task.name}
+
+
+@router.get("/{task_id}")
+async def get_meta_task(
+    task_id: int,
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = (
+        select(MetaTask)
+        .where(MetaTask.id == task_id)
+        .options(selectinload(MetaTask.llm_config_links).selectinload(MetaTaskLlmConfig.llm_config))
+    )
+    result = await db.execute(stmt)
+    task = result.unique().scalar_one_or_none()
+    if not task:
+        raise NotFoundError("MetaTask", task_id)
+    if current_user.role != "admin" and task.creator_id != current_user.id:
+        from app.utils.exceptions import PermissionDeniedError
+        raise PermissionDeniedError()
+    llm_configs = [
+        {"id": link.llm_config_id, "name": link.llm_config.name if link.llm_config else "", "priority": link.priority}
+        for link in sorted(task.llm_config_links, key=lambda x: x.priority)
+    ]
+    recent_instances = await db.execute(
+        select(TaskInstance)
+        .where(TaskInstance.meta_task_id == task.id)
+        .order_by(desc(TaskInstance.created_at))
+        .limit(5)
+    )
+    instances = [
+        {"id": inst.id, "instance_no": inst.instance_no, "status": inst.status, "created_at": inst.created_at.isoformat() if inst.created_at else ""}
+        for inst in recent_instances.scalars().all()
+    ]
+    return {
+        "id": task.id,
+        "name": task.name,
+        "description": task.description,
+        "search_params": json.loads(task.search_params) if task.search_params else {},
+        "prompt_template_id": task.prompt_template_id,
+        "llm_configs": llm_configs,
+        "schedule_cron": task.schedule_cron,
+        "is_periodic": task.is_periodic,
+        "is_active": task.is_active,
+        "execution_count": task.execution_count,
+        "last_executed_at": task.last_executed_at.isoformat() if task.last_executed_at else None,
+        "creator_id": task.creator_id,
+        "created_at": task.created_at.isoformat() if task.created_at else "",
+        "recent_instances": instances,
+    }
+
+
+@router.put("/{task_id}")
+async def update_meta_task(
+    task_id: int,
+    data: MetaTaskUpdate,
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(MetaTask).where(MetaTask.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise NotFoundError("MetaTask", task_id)
+    if current_user.role != "admin" and task.creator_id != current_user.id:
+        from app.utils.exceptions import PermissionDeniedError
+        raise PermissionDeniedError()
+    if data.name is not None:
+        task.name = data.name
+    if data.description is not None:
+        task.description = data.description
+    if data.search_params is not None:
+        task.search_params = json.dumps(data.search_params, ensure_ascii=False)
+    if data.prompt_template_id is not None:
+        task.prompt_template_id = data.prompt_template_id
+    if data.schedule_cron is not None:
+        task.schedule_cron = data.schedule_cron
+    if data.is_periodic is not None:
+        task.is_periodic = data.is_periodic
+    if data.is_active is not None:
+        task.is_active = data.is_active
+    if data.llm_config_ids is not None:
+        existing = await db.execute(
+            select(MetaTaskLlmConfig).where(MetaTaskLlmConfig.meta_task_id == task_id)
+        )
+        for link in existing.scalars().all():
+            await db.delete(link)
+        await db.flush()
+        for idx, llm_id in enumerate(data.llm_config_ids):
+            link = MetaTaskLlmConfig(meta_task_id=task.id, llm_config_id=llm_id, priority=idx)
+            db.add(link)
+    await db.commit()
+    return {"id": task.id, "name": task.name}
+
+
+@router.delete("/{task_id}")
+async def delete_meta_task(
+    task_id: int,
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(MetaTask).where(MetaTask.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise NotFoundError("MetaTask", task_id)
+    if current_user.role != "admin" and task.creator_id != current_user.id:
+        from app.utils.exceptions import PermissionDeniedError
+        raise PermissionDeniedError()
+    inst_count = await db.execute(
+        select(func.count(TaskInstance.id)).where(TaskInstance.meta_task_id == task_id)
+    )
+    if inst_count.scalar() > 0:
+        raise ValidationError("Cannot delete meta task with existing instances")
+    task.is_active = False
+    await db.commit()
+    await log_operation(db, current_user.id, "delete", "meta_task", task_id, f"Soft deleted meta task {task.name}")
+    return {"message": "Meta task deleted"}
+
+
+@router.post("/{task_id}/execute")
+async def execute_meta_task(
+    task_id: int,
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(MetaTask).where(MetaTask.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise NotFoundError("MetaTask", task_id)
+    if current_user.role != "admin" and task.creator_id != current_user.id:
+        from app.utils.exceptions import PermissionDeniedError
+        raise PermissionDeniedError()
+    from app.routers.task_instances import _create_instance
+    instance = await _create_instance(db, task, current_user, auto_run=True)
+    from app.task_queue.crud import TaskQueueService
+    svc = TaskQueueService(db)
+    await svc.enqueue(
+        queue_type="cnki",
+        task_type="cnki_search",
+        params_json=json.dumps({"instance_id": instance.id, "instance_no": instance.instance_no}),
+        task_key=instance.instance_no,
+    )
+    await log_operation(db, current_user.id, "execute", "meta_task", task_id, f"Executed meta task {task.name}")
+    return {"instance_id": instance.id, "instance_no": instance.instance_no}
