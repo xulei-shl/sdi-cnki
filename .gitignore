@@ -89,3 +89,9 @@ session/
 # Temporary
 *.tmp
 temp/
+
+.config/
+.gemini/
+.codex/
+.claude/
+.agent/
