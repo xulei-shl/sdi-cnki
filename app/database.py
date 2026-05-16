@@ -45,3 +45,29 @@ async def init_db():
         from app.models import Base
         await conn.run_sync(Base.metadata.create_all)
         await _migrate_system_prompts(conn)
+        await _seed_default_configs(conn)
+
+
+async def _seed_default_configs(conn):
+    """插入默认系统配置（幂等，仅空表时执行）。"""
+    from sqlalchemy import text as sql_text
+    result = await conn.execute(sql_text("SELECT COUNT(*) FROM system_configs"))
+    if result.scalar() > 0:
+        return
+    defaults = [
+        ("webhook_enterprise_wechat", "", "企业微信群机器人 Webhook URL"),
+        ("cnki_search_timeout", "1800", "CNKI 检索超时（秒）"),
+        ("llm_analysis_batch_size", "5", "LLM 批量分析并发数"),
+        ("cnki_queue_concurrency", "1", "CNKI 检索队列并发数"),
+        ("llm_queue_concurrency", "5", "LLM 分析队列并发数"),
+        ("download_queue_concurrency", "1", "PDF 下载队列并发数"),
+        ("export_queue_concurrency", "1", "导出打包队列并发数"),
+    ]
+    for key, value, description in defaults:
+        await conn.execute(
+            sql_text(
+                "INSERT INTO system_configs (key, value, description, updated_by, updated_at) "
+                "VALUES (:key, :value, :desc, 1, datetime('now'))"
+            ),
+            {"key": key, "value": value, "desc": description},
+        )

@@ -23,7 +23,7 @@ export default function SystemConfigPage() {
     setLoading(true)
     try {
       const res = await getSystemConfigs()
-      const items = Array.isArray(res.data) ? res.data : []
+      const items = res.data?.items ?? []
       setConfigs(items)
       const editMap: Record<string, string> = {}
       items.forEach((c: ConfigEntry) => { editMap[c.key] = c.value })
