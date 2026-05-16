@@ -150,102 +150,102 @@ export default function PromptPage() {
         </div>
 
         <div className="flex-1 overflow-auto px-8 py-6">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>名称</TableHead>
-              <TableHead>版本</TableHead>
-              <TableHead>标签</TableHead>
-              {isAdmin && <TableHead>创建者</TableHead>}
-              <TableHead>状态</TableHead>
-              <TableHead>更新时间</TableHead>
-              <TableHead className="text-right">操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow><TableCell colSpan={isAdmin ? 7 : 6} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
-            ) : prompts.length === 0 ? (
-              <TableRow><TableCell colSpan={isAdmin ? 7 : 6} className="text-center py-8 text-muted-foreground">暂无提示词</TableCell></TableRow>
-            ) : prompts.map((p) => (
-              <TableRow key={p.id} className="cursor-pointer" onClick={() => setViewItem(p)}>
-                <TableCell className="font-medium">{p.name}</TableCell>
-                <TableCell>{p.version}</TableCell>
-                <TableCell>
-                  <div className="flex gap-1 flex-wrap">
-                    {p.tags?.split(',').filter(Boolean).map((tag, i) => (
-                      <Badge key={i} variant="secondary" className="text-xs">{tag.trim()}</Badge>
-                    )) || '-'}
-                  </div>
-                </TableCell>
-                {isAdmin && <TableCell>{p.creator_name || '-'}</TableCell>}
-                <TableCell>
-                  <Badge variant={p.is_active ? 'success' : 'secondary'}>{p.is_active ? '启用' : '禁用'}</Badge>
-                </TableCell>
-                <TableCell>{formatDate(p.updated_at)}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openEdit(p); }}>编辑</Button>
-                    {p.ref_count === 0 && (
-                      <Button variant="ghost" size="sm" className="text-destructive" onClick={(e) => handleDeleteClick(e, p.id)}>删除</Button>
-                    )}
-                  </div>
-                </TableCell>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>名称</TableHead>
+                <TableHead>版本</TableHead>
+                <TableHead>标签</TableHead>
+                {isAdmin && <TableHead>创建者</TableHead>}
+                <TableHead>状态</TableHead>
+                <TableHead>更新时间</TableHead>
+                <TableHead className="text-right">操作</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={isAdmin ? 7 : 6} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
+              ) : prompts.length === 0 ? (
+                <TableRow><TableCell colSpan={isAdmin ? 7 : 6} className="text-center py-8 text-muted-foreground">暂无提示词</TableCell></TableRow>
+              ) : prompts.map((p) => (
+                <TableRow key={p.id} className="cursor-pointer" onClick={() => setViewItem(p)}>
+                  <TableCell className="font-medium">{p.name}</TableCell>
+                  <TableCell>{p.version}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1 flex-wrap">
+                      {p.tags?.split(',').filter(Boolean).map((tag, i) => (
+                        <Badge key={i} variant="secondary" className="text-xs">{tag.trim()}</Badge>
+                      )) || '-'}
+                    </div>
+                  </TableCell>
+                  {isAdmin && <TableCell>{p.creator_name || '-'}</TableCell>}
+                  <TableCell>
+                    <Badge variant={p.is_active ? 'success' : 'secondary'}>{p.is_active ? '启用' : '禁用'}</Badge>
+                  </TableCell>
+                  <TableCell>{formatDate(p.updated_at)}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-3">
+                      <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => { e.stopPropagation(); openEdit(p); }}>编辑</Button>
+                      {p.ref_count === 0 && (
+                        <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={(e) => handleDeleteClick(e, p.id)}>删除</Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
 
-      {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editItem ? '编辑提示词' : '新建提示词'}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            {/* Prompt Template Selector (only on create) */}
-            {!editItem && templates.length > 0 && (
+        {/* Create/Edit Dialog */}
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editItem ? '编辑提示词' : '新建提示词'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              {/* Prompt Template Selector (only on create) */}
+              {!editItem && templates.length > 0 && (
+                <div className="space-y-1">
+                  <Label>提示词模板（可选）</Label>
+                  <Select value={selectedTemplate} onChange={(e) => handleTemplateSelect(e.target.value)}>
+                    <option value="">不选择模板，从零创建</option>
+                    {templates.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </Select>
+                  <p className="text-xs text-muted-foreground">选择后将自动填充提示词内容，可在此基础上编辑</p>
+                </div>
+              )}
               <div className="space-y-1">
-                <Label>提示词模板（可选）</Label>
-                <Select value={selectedTemplate} onChange={(e) => handleTemplateSelect(e.target.value)}>
-                  <option value="">不选择模板，从零创建</option>
-                  {templates.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </Select>
-                <p className="text-xs text-muted-foreground">选择后将自动填充提示词内容，可在此基础上编辑</p>
-              </div>
-            )}
-            <div className="space-y-1">
-              <Label>名称 <span className="text-destructive">*</span></Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <Label>提示词内容 <span className="text-destructive">*</span></Label>
-              <Textarea value={content} onChange={(e) => setContent(e.target.value)} rows={12} className="font-mono text-sm" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>版本</Label>
-                <Input value={version} onChange={(e) => setVersion(e.target.value)} />
+                <Label>名称 <span className="text-destructive">*</span></Label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label>标签（逗号分隔）</Label>
-                <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="如 相关性评估, 默认模板" />
+                <Label>提示词内容 <span className="text-destructive">*</span></Label>
+                <Textarea value={content} onChange={(e) => setContent(e.target.value)} rows={12} className="font-mono text-sm" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>版本</Label>
+                  <Input value={version} onChange={(e) => setVersion(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>标签（逗号分隔）</Label>
+                  <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="如 相关性评估, 默认模板" />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
+                <Label>启用</Label>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Switch checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
-              <Label>启用</Label>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
-            <Button onClick={handleSave} disabled={saving}>{saving ? '保存中...' : '保存'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
+              <Button onClick={handleSave} disabled={saving}>{saving ? '保存中...' : '保存'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
       </div>
 

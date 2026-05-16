@@ -221,11 +221,11 @@ export default function MetaTaskPage() {
                   </TableCell>
                   <TableCell>{formatDate(task.last_executed_at)}</TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={(e) => openEdit(e, task)}>编辑</Button>
-                      <Button variant="ghost" size="sm" onClick={(e) => handleExecute(e, task.id)}>运行</Button>
+                    <div className="flex justify-end gap-3">
+                      <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => openEdit(e, task)}>编辑</Button>
+                      <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleExecute(e, task.id)}>运行</Button>
                       {task.execution_count === 0 && (
-                        <Button variant="ghost" size="sm" className="text-destructive" onClick={(e) => handleDelete(e, task.id)}>删除</Button>
+                        <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={(e) => handleDelete(e, task.id)}>删除</Button>
                       )}
                     </div>
                   </TableCell>

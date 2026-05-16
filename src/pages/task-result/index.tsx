@@ -424,12 +424,12 @@ export default function TaskResultPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => viewDetail(row)}>详情</Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleSinglePass(row)}>
+                        <div className="flex justify-end gap-3">
+                          <Button variant="link" className="h-auto p-0 font-normal" onClick={() => viewDetail(row)}>详情</Button>
+                          <Button variant="link" className="h-auto p-0 font-normal" onClick={() => handleSinglePass(row)}>
                             {row.is_passed === true ? '取消' : '通过'}
                           </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleSingleReject(row)}>
+                          <Button variant="link" className={`h-auto p-0 font-normal ${row.is_passed === false ? '' : 'text-destructive hover:text-destructive/80'}`} onClick={() => handleSingleReject(row)}>
                             {row.is_passed === false ? '取消' : '拒绝'}
                           </Button>
                         </div>

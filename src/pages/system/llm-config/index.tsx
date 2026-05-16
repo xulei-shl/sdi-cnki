@@ -168,11 +168,11 @@ export default function LlmConfigPage() {
                 </TableCell>
                 <TableCell>{cfg.created_at?.slice(0, 16).replace('T', ' ') || '-'}</TableCell>
                 <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => handleTestById(cfg.id)} disabled={testingId === cfg.id}>{testingId === cfg.id ? '测试中' : '测试'}</Button>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(cfg)}>编辑</Button>
-                      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(cfg.id)}>删除</Button>
-                    </div>
+                  <div className="flex justify-end gap-3">
+                    <Button variant="link" className="h-auto p-0 font-normal" onClick={() => handleTestById(cfg.id)} disabled={testingId === cfg.id}>{testingId === cfg.id ? '测试中' : '测试'}</Button>
+                    <Button variant="link" className="h-auto p-0 font-normal" onClick={() => openEdit(cfg)}>编辑</Button>
+                    <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={() => handleDelete(cfg.id)}>删除</Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

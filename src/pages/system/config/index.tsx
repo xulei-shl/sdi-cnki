@@ -118,18 +118,19 @@ export default function SystemConfigPage() {
                   {formatDate(cfg.updated_at)}
                 </TableCell>
                 <TableCell className="text-right">
-                  {cfg.key === 'webhook_enterprise_wechat' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mr-2"
-                      onClick={() => handleTestWebhook(cfg.key)}
-                      disabled={testingWebhook}
-                    >
-                      测试
-                    </Button>
-                  )}
-                  <Button size="sm" onClick={() => handleSave(cfg.key)}>保存</Button>
+                  <div className="flex justify-end gap-3">
+                    {cfg.key === 'webhook_enterprise_wechat' && (
+                      <Button
+                        variant="link"
+                        className="h-auto p-0 font-normal"
+                        onClick={() => handleTestWebhook(cfg.key)}
+                        disabled={testingWebhook}
+                      >
+                        测试
+                      </Button>
+                    )}
+                    <Button variant="link" className="h-auto p-0 font-normal" onClick={() => handleSave(cfg.key)}>保存</Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

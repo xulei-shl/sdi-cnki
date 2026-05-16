@@ -259,27 +259,27 @@ export default function TaskInstancePage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); navigate(`/task-instances/${inst.id}/results`) }}>
-                          查看
+                      <div className="flex justify-end gap-3">
+                        <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => { e.stopPropagation(); navigate(`/task-instances/${inst.id}/results`) }}>
+                          明细
                         </Button>
                         {inst.status === 'pending' && !inst.auto_run && (
-                          <Button variant="ghost" size="sm" onClick={(e) => handleRunInstance(e, inst)} disabled={runningId === inst.id}>
+                          <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleRunInstance(e, inst)} disabled={runningId === inst.id}>
                             {runningId === inst.id ? '执行中...' : '运行'}
                           </Button>
                         )}
                         {inst.status === 'pending' && !inst.auto_run && (
-                          <Button variant="ghost" size="sm" onClick={(e) => handleEditInstance(e, inst)}>
+                          <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleEditInstance(e, inst)}>
                             编辑
                           </Button>
                         )}
                         {inst.status === 'pending' && (
-                          <Button variant="ghost" size="sm" className="text-destructive" onClick={(e) => handleDeleteInstance(e, inst)} disabled={deletingId === inst.id}>
+                          <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={(e) => handleDeleteInstance(e, inst)} disabled={deletingId === inst.id}>
                             {deletingId === inst.id ? '删除中...' : '删除'}
                           </Button>
                         )}
                         {['analyzing_completed', 'completed', 'failed'].includes(inst.status) && (
-                          <Button variant="ghost" size="sm" onClick={(e) => handleExport(e, inst)} disabled={exportingId === inst.id}>
+                          <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleExport(e, inst)} disabled={exportingId === inst.id}>
                             {exportingId === inst.id ? '导出中...' : '结果导出'}
                           </Button>
                         )}

@@ -133,9 +133,9 @@ export default function UserManagePage() {
                 </TableCell>
                 <TableCell>{formatDate(user.created_at)}</TableCell>
                 <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(user)}>编辑</Button>
-                    <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(user.id)}>删除</Button>
+                  <div className="flex justify-end gap-3">
+                    <Button variant="link" className="h-auto p-0 font-normal" onClick={() => openEdit(user)}>编辑</Button>
+                    <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={() => handleDelete(user.id)}>删除</Button>
                   </div>
                 </TableCell>
               </TableRow>
