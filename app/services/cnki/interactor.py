@@ -8,6 +8,7 @@ import re
 import shutil
 import time as _time
 from datetime import datetime
+from io import StringIO
 from pathlib import Path
 from typing import Any, Optional
 
@@ -464,7 +465,6 @@ class CnkiInteractor:
             current_offset += page_target
             if remaining <= 0:
                 break
-            self._clear_selected_results()
             if current_offset < row_count:
                 continue
             if not self._goto_next_results_page():
@@ -617,7 +617,12 @@ class CnkiInteractor:
         df.to_excel(dst, index=False, engine="openpyxl")
 
     def _sanitize_excel(self, path: Path) -> pd.DataFrame:
-        df = pd.read_excel(path, engine="openpyxl", header=None).fillna("")
+        try:
+            df = pd.read_excel(path, engine="openpyxl", header=None).fillna("")
+        except Exception:
+            html_content = path.read_text(encoding="utf-8")
+            tables = pd.read_html(StringIO(html_content), flavor="lxml", header=None)
+            df = tables[0].fillna("") if tables else pd.DataFrame()
         headers: list = []
         all_cols: list = []
         rows: list = []
@@ -732,10 +737,13 @@ class CnkiInteractor:
 
         self._set_results_per_page(export_limit, total)
         batch_files = []
+        batch_remaining = export_limit
 
         for batch_idx in range(1, batch_count + 1):
-            self._select_batch(EXPORT_BATCH_SIZE)
+            batch_size = min(EXPORT_BATCH_SIZE, batch_remaining)
+            self._select_batch(batch_size)
             excel_path, txt_path = self._export_batch(query, batch_idx)
+            batch_remaining -= EXPORT_BATCH_SIZE
             batch_files.append({"excel": str(excel_path), "txt": str(txt_path)})
             print(f"[CNKI] Batch {batch_idx}/{batch_count}: {excel_path.name}")
             self._clear_selected_results()

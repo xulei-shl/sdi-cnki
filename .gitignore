@@ -94,3 +94,5 @@ temp/
 .codex/
 # .claude/
 .agent/
+/data/cookies
+/data/exports

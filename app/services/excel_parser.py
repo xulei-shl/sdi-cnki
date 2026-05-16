@@ -45,7 +45,7 @@ def parse_excel_to_records(excel_path: str | Path) -> list[dict[str, Any]]:
                     val = int(float(val)) if val else None
                 except (ValueError, TypeError):
                     val = None
-            if field in ("authors", "keywords") and isinstance(val, str):
+            if field in ("authors", "keywords", "first_duty") and isinstance(val, str):
                 val = _clean_separator(val)
             record[field] = val
         ref = row.get(REFERENCE_COLUMN, "")
