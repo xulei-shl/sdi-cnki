@@ -1,54 +1,115 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: "Inter", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: "Geist Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  
+  --shadow-sm: 0 1px 2px 0 rgba(28, 25, 23, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(28, 25, 23, 0.05), 0 2px 4px -2px rgba(28, 25, 23, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(28, 25, 23, 0.05), 0 4px 6px -4px rgba(28, 25, 23, 0.02);
+  --shadow-elevated: 0 20px 25px -5px rgba(28, 25, 23, 0.05), 0 8px 10px -6px rgba(28, 25, 23, 0.05);
+  --shadow-glow: 0 0 20px rgba(28, 25, 23, 0.05);
+  
+  /* Radix UI Colors compatibility */
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: #ffffff;
-  --foreground: #09090b;
+  /* Warm Professional Palette */
+  --background: #fcfaef; /* Notion-like extremely subtle warm paper */
+  --foreground: #1c1917; /* stone-900 */
   --card: #ffffff;
-  --card-foreground: #09090b;
+  --card-foreground: #1c1917;
   --popover: #ffffff;
-  --popover-foreground: #09090b;
-  --primary: #18181b;
-  --primary-foreground: #fafafa;
-  --secondary: #f4f4f5;
-  --secondary-foreground: #18181b;
-  --muted: #f4f4f5;
-  --muted-foreground: #71717a;
-  --accent: #f4f4f5;
-  --accent-foreground: #18181b;
-  --destructive: #ef4444;
-  --destructive-foreground: #fafafa;
-  --border: #e4e4e7;
-  --input: #e4e4e7;
-  --ring: #09090b;
-  --radius: 0.5rem;
+  --popover-foreground: #1c1917;
+  --primary: #292524; /* stone-800 for high-end feel */
+  --primary-foreground: #fafaf9; /* stone-50 */
+  --secondary: #f5f5f4; /* stone-100 */
+  --secondary-foreground: #292524; /* stone-800 */
+  --muted: #f5f5f4;
+  --muted-foreground: #78716c; /* stone-500 */
+  --accent: #f5f5f4;
+  --accent-foreground: #292524;
+  --destructive: #b91c1c; /* red-700 more sophisticated */
+  --destructive-foreground: #fafaf9;
+  --border: #e7e5e4; /* stone-200 */
+  --input: #e7e5e4;
+  --ring: #d6d3d1; /* stone-300 */
+  --radius: 0.5rem; /* rounded-lg base */
 }
 
 .dark {
-  --background: #09090b;
-  --foreground: #fafafa;
-  --card: #09090b;
-  --card-foreground: #fafafa;
-  --popover: #09090b;
-  --popover-foreground: #fafafa;
-  --primary: #fafafa;
-  --primary-foreground: #18181b;
-  --secondary: #27272a;
-  --secondary-foreground: #fafafa;
-  --muted: #27272a;
-  --muted-foreground: #a1a1aa;
-  --accent: #27272a;
-  --accent-foreground: #fafafa;
+  --background: #0c0a09; /* stone-950 */
+  --foreground: #fafaf9;
+  --card: #1c1917;
+  --card-foreground: #fafaf9;
+  --popover: #1c1917;
+  --popover-foreground: #fafaf9;
+  --primary: #fafaf9;
+  --primary-foreground: #1c1917;
+  --secondary: #292524;
+  --secondary-foreground: #fafaf9;
+  --muted: #292524;
+  --muted-foreground: #a8a29e;
+  --accent: #292524;
+  --accent-foreground: #fafaf9;
   --destructive: #7f1d1d;
-  --destructive-foreground: #fafafa;
-  --border: #27272a;
-  --input: #27272a;
-  --ring: #d4d4d8;
+  --destructive-foreground: #fafaf9;
+  --border: #292524;
+  --input: #292524;
+  --ring: #44403c;
 }
 
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased selection:bg-stone-200 selection:text-stone-900;
+  }
+}
+
+/* Micro-interaction enhancements */
+button, a {
+  @apply transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)];
+}
+button:active, a:active {
+  transform: scale(0.98);
+}
+
+/* Elevated table base for readability */
+table {
+  @apply text-sm;
+}
+th {
+  @apply tracking-tight font-medium text-muted-foreground;
+}
+
+/* Data numbers */
+.data-number {
+  @apply font-mono tabular-nums;
 }
