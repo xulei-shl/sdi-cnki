@@ -9,7 +9,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
 import { toast } from 'sonner'
 import { getTaskInstances, getTaskInstance, deleteTaskInstance, runTaskInstance, type TaskInstanceQuery } from '@/api/task-instances'
-import { ConfirmDialog } from './confirm-dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EditDialog } from './edit-dialog'
 import type { TaskInstance, TaskStatus } from '@/types'
 

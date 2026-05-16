@@ -11,6 +11,7 @@ import { getLlmConfigs } from '@/api/llm-configs'
 import { getSystemPrompts } from '@/api/system-prompts'
 import { MetaTaskDialog } from './dialog'
 import { ExecuteDialog } from './execute-dialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { MetaTask, LlmConfig, SystemPrompt } from '@/types'
 
 export default function MetaTaskPage() {
@@ -27,6 +28,8 @@ export default function MetaTaskPage() {
   const [executeOpen, setExecuteOpen] = useState(false)
   const [executeTaskId, setExecuteTaskId] = useState<number | null>(null)
   const [executing, setExecuting] = useState<number | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [llmConfigs, setLlmConfigs] = useState<LlmConfig[]>([])
   const [prompts, setPrompts] = useState<SystemPrompt[]>([])
 
@@ -87,16 +90,24 @@ export default function MetaTaskPage() {
     setDialogOpen(true)
   }
 
-  const handleDelete = async (e: React.MouseEvent, id: number) => {
+  const handleDelete = (e: React.MouseEvent, id: number) => {
     e.stopPropagation()
-    if (!confirm('确认删除该任务模板？')) return
+    setConfirmDeleteId(id)
+  }
+
+  const doDelete = async () => {
+    if (!confirmDeleteId) return
+    setDeletingId(confirmDeleteId)
+    setConfirmDeleteId(null)
     try {
-      await deleteMetaTask(id)
+      await deleteMetaTask(confirmDeleteId)
       toast.success('删除成功')
       fetchTasks()
-      if (selectedTask?.id === id) setSelectedTask(null)
+      if (selectedTask?.id === confirmDeleteId) setSelectedTask(null)
     } catch {
       toast.error('删除失败，请检查是否有关联的实例')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -290,6 +301,17 @@ export default function MetaTaskPage() {
         onRunDirect={() => confirmExecute(true)}
         onRunDraft={() => confirmExecute(false)}
         loading={executing !== null}
+      />
+
+      <ConfirmDialog
+        open={!!confirmDeleteId}
+        onOpenChange={(o) => { if (!o) setConfirmDeleteId(null) }}
+        title="确认删除"
+        description="确认删除该任务模板？删除后不可恢复。"
+        confirmText="删除"
+        variant="destructive"
+        onConfirm={doDelete}
+        loading={deletingId !== null}
       />
     </div>
   )
