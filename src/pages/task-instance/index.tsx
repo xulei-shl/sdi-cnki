@@ -53,6 +53,7 @@ export default function TaskInstancePage() {
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<TaskInstance | null>(null)
   const [confirmRun, setConfirmRun] = useState<TaskInstance | null>(null)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editInstance, setEditInstance] = useState<TaskInstance | null>(null)
 
   const fetchInstances = useCallback(async () => {
@@ -106,6 +107,7 @@ export default function TaskInstancePage() {
   const handleEditInstance = (e: React.MouseEvent, inst: TaskInstance) => {
     e.stopPropagation()
     setEditInstance(inst)
+    setEditDialogOpen(true)
   }
 
   const handleDeleteInstance = (e: React.MouseEvent, inst: TaskInstance) => {
@@ -313,10 +315,10 @@ export default function TaskInstancePage() {
       />
 
       <EditDialog
-        open={!!editInstance}
-        onOpenChange={(o) => { if (!o) setEditInstance(null) }}
+        open={editDialogOpen}
+        onOpenChange={(o) => { if (!o) setEditDialogOpen(false) }}
         instance={editInstance}
-        onSuccess={fetchInstances}
+        onSuccess={() => { setEditDialogOpen(false); fetchInstances() }}
       />
     </div>
   )
