@@ -12,7 +12,7 @@ const navItems = [
 const adminItems = [
   { to: '/system/users', label: '用户管理', icon: Users },
   { to: '/system/llm-configs', label: '大模型管理', icon: Cpu },
-  { to: '/system/prompts', label: '提示词管理', icon: FileText },
+
   { to: '/system/prompt-templates', label: '系统提示词模板', icon: BookOpen },
   { to: '/system/config', label: '系统配置', icon: Settings },
 ]

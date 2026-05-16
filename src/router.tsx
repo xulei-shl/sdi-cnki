@@ -28,7 +28,7 @@ export const router = createBrowserRouter([
       { path: 'prompts', element: <PromptPage /> },
       { path: 'system/users', element: <UserManagePage /> },
       { path: 'system/llm-configs', element: <LlmConfigPage /> },
-      { path: 'system/prompts', element: <PromptPage /> },
+
       { path: 'system/prompt-templates', element: <PromptTemplatePage /> },
       { path: 'system/config', element: <SystemConfigPage /> },
       { path: '403', element: <ForbiddenPage /> },

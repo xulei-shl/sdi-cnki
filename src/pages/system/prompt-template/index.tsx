@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
 import { toast } from 'sonner'
 import { getPromptTemplates, createPromptTemplate, updatePromptTemplate, deletePromptTemplate } from '@/api/prompt-templates'
 import type { PromptTemplate } from '@/types'
@@ -99,13 +100,14 @@ export default function PromptTemplatePage() {
   const formatDate = (d: string) => d?.slice(0, 16).replace('T', ' ') || '-'
 
   return (
-    <div className="p-6 h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">系统提示词模板</h2>
-        <Button onClick={openCreate}>新建模板</Button>
-      </div>
+    <div className="h-full flex overflow-hidden relative">
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="px-8 py-6 border-b flex items-center justify-between shrink-0">
+          <h2 className="text-lg font-semibold">系统提示词模板</h2>
+          <Button onClick={openCreate}>新建模板</Button>
+        </div>
 
-      <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto px-8 py-6">
         <Table>
           <TableHeader>
             <TableRow>
@@ -123,7 +125,7 @@ export default function PromptTemplatePage() {
             ) : templates.length === 0 ? (
               <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">暂无模板</TableCell></TableRow>
             ) : templates.map((t) => (
-              <TableRow key={t.id}>
+              <TableRow key={t.id} className="cursor-pointer" onClick={() => setViewItem(t)}>
                 <TableCell className="font-medium">{t.name}</TableCell>
                 <TableCell>{t.version}</TableCell>
                 <TableCell>
@@ -139,9 +141,8 @@ export default function PromptTemplatePage() {
                 <TableCell>{formatDate(t.updated_at)}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => setViewItem(t)}>查看</Button>
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(t)}>编辑</Button>
-                    <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(t.id)}>删除</Button>
+                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openEdit(t); }}>编辑</Button>
+                    <Button variant="ghost" size="sm" className="text-destructive" onClick={(e) => { e.stopPropagation(); handleDelete(t.id); }}>删除</Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -187,30 +188,29 @@ export default function PromptTemplatePage() {
         </DialogContent>
       </Dialog>
 
-      {/* View Dialog */}
-      <Dialog open={!!viewItem} onOpenChange={(o) => { if (!o) setViewItem(null) }}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{viewItem?.name}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="flex gap-2 text-sm text-muted-foreground">
-              <span>版本: {viewItem?.version}</span>
-              <span>|</span>
-              <span>状态: {viewItem?.is_active ? '启用' : '禁用'}</span>
-              {viewItem?.tags && (
-                <>
-                  <span>|</span>
-                  <span>标签: {viewItem.tags}</span>
-                </>
-              )}
-            </div>
-            <pre className="border rounded-md p-4 text-sm whitespace-pre-wrap font-mono bg-muted/30 max-h-96 overflow-y-auto">
-              {viewItem?.content}
-            </pre>
-          </div>
-        </DialogContent>
-      </Dialog>
+      </div>
+
+      {/* Right: Detail Panel */}
+      <DetailPanel
+        open={!!viewItem}
+        title={viewItem?.name || ''}
+        onClose={() => setViewItem(null)}
+      >
+        {viewItem && (
+          <>
+            <DetailSection label="基本信息">
+              <DetailRow label="版本">{viewItem.version}</DetailRow>
+              <DetailRow label="状态">{viewItem.is_active ? '启用' : '禁用'}</DetailRow>
+              {viewItem.tags && <DetailRow label="标签">{viewItem.tags}</DetailRow>}
+            </DetailSection>
+            <DetailSection label="内容">
+              <pre className="border rounded-md p-4 text-sm whitespace-pre-wrap font-mono bg-muted/30 max-h-[60vh] overflow-y-auto">
+                {viewItem.content}
+              </pre>
+            </DetailSection>
+          </>
+        )}
+      </DetailPanel>
     </div>
   )
 }

@@ -9,6 +9,7 @@ import { Select } from '@/components/ui/select'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
 import { toast } from 'sonner'
 import { useAuth } from '@/context/auth'
 import { getSystemPrompts, createSystemPrompt, updateSystemPrompt, deleteSystemPrompt } from '@/api/system-prompts'
@@ -141,13 +142,14 @@ export default function PromptPage() {
   const formatDate = (d: string) => d?.slice(0, 16).replace('T', ' ') || '-'
 
   return (
-    <div className="p-6 h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">提示词</h2>
-        <Button onClick={openCreate}>新建提示词</Button>
-      </div>
+    <div className="h-full flex overflow-hidden relative">
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="px-8 py-6 border-b flex items-center justify-between shrink-0">
+          <h2 className="text-lg font-semibold">提示词</h2>
+          <Button onClick={openCreate}>新建提示词</Button>
+        </div>
 
-      <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto px-8 py-6">
         <Table>
           <TableHeader>
             <TableRow>
@@ -166,7 +168,7 @@ export default function PromptPage() {
             ) : prompts.length === 0 ? (
               <TableRow><TableCell colSpan={isAdmin ? 7 : 6} className="text-center py-8 text-muted-foreground">暂无提示词</TableCell></TableRow>
             ) : prompts.map((p) => (
-              <TableRow key={p.id}>
+              <TableRow key={p.id} className="cursor-pointer" onClick={() => setViewItem(p)}>
                 <TableCell className="font-medium">{p.name}</TableCell>
                 <TableCell>{p.version}</TableCell>
                 <TableCell>
@@ -183,8 +185,7 @@ export default function PromptPage() {
                 <TableCell>{formatDate(p.updated_at)}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => setViewItem(p)}>查看</Button>
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>编辑</Button>
+                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openEdit(p); }}>编辑</Button>
                     {p.ref_count === 0 && (
                       <Button variant="ghost" size="sm" className="text-destructive" onClick={(e) => handleDeleteClick(e, p.id)}>删除</Button>
                     )}
@@ -246,36 +247,30 @@ export default function PromptPage() {
         </DialogContent>
       </Dialog>
 
-      {/* View Dialog */}
-      <Dialog open={!!viewItem} onOpenChange={(o) => { if (!o) setViewItem(null) }}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{viewItem?.name}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="flex gap-2 text-sm text-muted-foreground">
-              <span>版本: {viewItem?.version}</span>
-              <span>|</span>
-              <span>状态: {viewItem?.is_active ? '启用' : '禁用'}</span>
-              {viewItem?.tags && (
-                <>
-                  <span>|</span>
-                  <span>标签: {viewItem.tags}</span>
-                </>
-              )}
-              {isAdmin && viewItem?.creator_name && (
-                <>
-                  <span>|</span>
-                  <span>创建者: {viewItem.creator_name}</span>
-                </>
-              )}
-            </div>
-            <pre className="border rounded-md p-4 text-sm whitespace-pre-wrap font-mono bg-muted/30 max-h-96 overflow-y-auto">
-              {viewItem?.content}
-            </pre>
-          </div>
-        </DialogContent>
-      </Dialog>
+      </div>
+
+      {/* Right: Detail Panel */}
+      <DetailPanel
+        open={!!viewItem}
+        title={viewItem?.name || ''}
+        onClose={() => setViewItem(null)}
+      >
+        {viewItem && (
+          <>
+            <DetailSection label="基本信息">
+              <DetailRow label="版本">{viewItem.version}</DetailRow>
+              <DetailRow label="状态">{viewItem.is_active ? '启用' : '禁用'}</DetailRow>
+              {viewItem.tags && <DetailRow label="标签">{viewItem.tags}</DetailRow>}
+              {isAdmin && viewItem.creator_name && <DetailRow label="创建者">{viewItem.creator_name}</DetailRow>}
+            </DetailSection>
+            <DetailSection label="内容">
+              <pre className="border rounded-md p-4 text-sm whitespace-pre-wrap font-mono bg-muted/30 max-h-[60vh] overflow-y-auto">
+                {viewItem.content}
+              </pre>
+            </DetailSection>
+          </>
+        )}
+      </DetailPanel>
 
       <ConfirmDialog
         open={!!confirmDeleteId}
