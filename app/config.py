@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     cnki_username: str = ""
     cnki_password: str = ""
 
+    auto_start_workers: bool = True
+
     worker_cnki_concurrency: int = 1
     worker_llm_concurrency: int = 5
     worker_download_concurrency: int = 1

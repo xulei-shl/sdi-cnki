@@ -380,3 +380,32 @@ async def start_download(
     )
     await db.commit()
     return {"message": "Download queued"}
+
+
+@router.post("/{instance_id}/run")
+async def run_task_instance(
+    instance_id: int,
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(TaskInstance).where(TaskInstance.id == instance_id)
+    result = await db.execute(stmt)
+    inst = result.scalar_one_or_none()
+    if not inst:
+        raise NotFoundError("TaskInstance", instance_id)
+    if current_user.role != "admin" and inst.creator_id != current_user.id:
+        from app.utils.exceptions import PermissionDeniedError
+        raise PermissionDeniedError()
+    if inst.status != "pending":
+        raise ValidationError(f"Cannot run instance with status: {inst.status}")
+    from app.task_queue.crud import TaskQueueService
+    svc = TaskQueueService(db)
+    await svc.enqueue(
+        queue_type="cnki",
+        task_type="cnki_search",
+        params_json=json.dumps({"instance_id": instance_id, "instance_no": inst.instance_no}),
+        task_key=inst.instance_no,
+    )
+    await db.commit()
+    await log_operation(db, current_user.id, "run", "task_instance", instance_id, f"Run instance {inst.instance_no}")
+    return {"message": "Instance queued for execution"}

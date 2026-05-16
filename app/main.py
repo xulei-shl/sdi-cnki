@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.database import init_db, engine
+from app.database import init_db, engine, async_session_factory
 from app.utils.exceptions import AppError
 from app.utils.logging import setup_logging, get_logger, request_id_var, user_id_var
 from app.routers import auth, users, llm_configs, system_configs, system_prompts, prompt_templates, meta_tasks, task_instances, task_results, sse, exports
@@ -22,6 +22,8 @@ import shutil
 
 _disk_monitor_task: asyncio.Task | None = None
 _last_disk_alert_time: float = 0
+
+_background_workers: list[asyncio.Task] = []
 
 
 async def _disk_monitor_loop():
@@ -43,15 +45,56 @@ async def _disk_monitor_loop():
         await asyncio.sleep(60)
 
 
+async def _start_worker(queue_type: str, concurrency: int):
+    """启动一个后台 worker 协程。"""
+    from app.task_queue.worker import BaseWorker
+
+    cls_map = {
+        "cnki": ("app.worker.cnki_worker", "run_cnki_search"),
+        "llm": ("app.worker.llm_worker", "run_llm_analysis"),
+        "download": ("app.worker.download_worker", "run_download"),
+        "export": ("app.worker.export_worker", "run_export"),
+    }
+    mod_path, func_name = cls_map.get(queue_type, (None, None))
+    if not mod_path:
+        logger.error(f"Unknown worker type: {queue_type}")
+        return
+
+    class _Worker(BaseWorker):
+        async def process(self, db, item_id: int, params_json: str) -> None:
+            from importlib import import_module
+            fn = getattr(import_module(mod_path), func_name)
+            await fn(db, item_id, params_json)
+
+    worker = _Worker(queue_type=queue_type, session_factory=async_session_factory, concurrency=concurrency)
+    await worker.run()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _disk_monitor_task
+    global _disk_monitor_task, _background_workers
     logger.info("Starting up...")
     await init_db()
     logger.info("Database initialized")
     _disk_monitor_task = asyncio.create_task(_disk_monitor_loop())
+    auto_workers = settings.auto_start_workers
+    if auto_workers:
+        worker_configs = [
+            ("cnki", 1),
+            ("llm", 5),
+            ("download", 1),
+            ("export", 2),
+        ]
+        for queue_type, concurrency in worker_configs:
+            task = asyncio.create_task(_start_worker(queue_type, concurrency), name=f"worker-{queue_type}")
+            _background_workers.append(task)
+            logger.info(f"Auto-started worker [{queue_type}] (concurrency={concurrency})")
     yield
     logger.info("Shutting down...")
+    for task in _background_workers:
+        task.cancel()
+    if _background_workers:
+        await asyncio.gather(*_background_workers, return_exceptions=True)
     if _disk_monitor_task:
         _disk_monitor_task.cancel()
     await engine.dispose()
