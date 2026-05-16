@@ -3,6 +3,7 @@ from app.models.user import User
 from app.models.llm_config import LlmConfig
 from app.models.system_config import SystemConfig
 from app.models.system_prompt import SystemPrompt
+from app.models.prompt_template import PromptTemplate
 from app.models.meta_task import MetaTask
 from app.models.meta_task_llm_config import MetaTaskLlmConfig
 from app.models.task_instance import TaskInstance

@@ -129,6 +129,20 @@ export interface SystemPrompt {
   version: string
   tags: string
   is_active: boolean
+  creator_id: number
+  creator_name: string
+  ref_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface PromptTemplate {
+  id: number
+  name: string
+  content: string
+  version: string
+  tags: string
+  is_active: boolean
   created_at: string
   updated_at: string
 }

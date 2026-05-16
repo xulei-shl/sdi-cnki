@@ -24,3 +24,5 @@ class User(Base):
     task_instances = relationship("TaskInstance", back_populates="creator")
     llm_configs = relationship("LlmConfig", back_populates="creator")
     operation_logs = relationship("OperationLog", back_populates="user")
+    user_prompts = relationship("SystemPrompt", back_populates="creator")
+    prompt_templates = relationship("PromptTemplate", back_populates="creator")

@@ -1,8 +1,8 @@
 import http from '@/lib/http'
-import type { SystemPrompt } from '@/types'
+import type { SystemPrompt, PaginatedResponse } from '@/types'
 
-export function getSystemPrompts() {
-  return http.get<SystemPrompt[]>('/system-prompts')
+export function getSystemPrompts(params = {}) {
+  return http.get<PaginatedResponse<SystemPrompt>>('/system-prompts', { params })
 }
 
 export function createSystemPrompt(data: Partial<SystemPrompt>) {

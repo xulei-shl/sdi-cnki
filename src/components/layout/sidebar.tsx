@@ -1,17 +1,19 @@
 import { useAuth } from '@/context/auth'
 import { cn } from '@/lib/utils'
 import { NavLink } from 'react-router-dom'
-import { ClipboardList, LayoutDashboard, Users, Cpu, FileText, Settings } from 'lucide-react'
+import { ClipboardList, LayoutDashboard, Users, Cpu, FileText, Settings, BookOpen } from 'lucide-react'
 
 const navItems = [
   { to: '/meta-tasks', label: '任务模板', icon: ClipboardList, roles: ['admin', 'user'] },
   { to: '/task-instances', label: '任务实例', icon: LayoutDashboard, roles: ['admin', 'user'] },
+  { to: '/prompts', label: '提示词', icon: FileText, roles: ['admin', 'user'] },
 ]
 
 const adminItems = [
   { to: '/system/users', label: '用户管理', icon: Users },
   { to: '/system/llm-configs', label: '大模型管理', icon: Cpu },
   { to: '/system/prompts', label: '提示词管理', icon: FileText },
+  { to: '/system/prompt-templates', label: '系统提示词模板', icon: BookOpen },
   { to: '/system/config', label: '系统配置', icon: Settings },
 ]
 

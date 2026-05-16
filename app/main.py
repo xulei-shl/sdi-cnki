@@ -10,7 +10,7 @@ from app.config import get_settings
 from app.database import init_db, engine
 from app.utils.exceptions import AppError
 from app.utils.logging import setup_logging, get_logger, request_id_var, user_id_var
-from app.routers import auth, users, llm_configs, system_configs, system_prompts, meta_tasks, task_instances, task_results, sse, exports
+from app.routers import auth, users, llm_configs, system_configs, system_prompts, prompt_templates, meta_tasks, task_instances, task_results, sse, exports
 
 settings = get_settings()
 setup_logging()
@@ -113,6 +113,7 @@ app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
 app.include_router(llm_configs.router, prefix="/api/v1/llm-configs", tags=["LLM Configs"])
 app.include_router(system_configs.router, prefix="/api/v1/system", tags=["System Configs"])
 app.include_router(system_prompts.router, prefix="/api/v1/system-prompts", tags=["System Prompts"])
+app.include_router(prompt_templates.router, prefix="/api/v1/prompt-templates", tags=["Prompt Templates"])
 app.include_router(meta_tasks.router, prefix="/api/v1/meta-tasks", tags=["Meta Tasks"])
 app.include_router(task_instances.router, prefix="/api/v1/task-instances", tags=["Task Instances"])
 app.include_router(task_results.router, prefix="/api/v1/task-results", tags=["Task Results"])

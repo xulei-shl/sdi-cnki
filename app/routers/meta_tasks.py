@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models.meta_task import MetaTask
 from app.models.meta_task_llm_config import MetaTaskLlmConfig
+from app.models.system_prompt import SystemPrompt
 from app.models.task_instance import TaskInstance
 from app.models.user import User
 from app.utils.exceptions import NotFoundError, ValidationError
@@ -23,6 +24,19 @@ router = APIRouter()
 
 MAX_EXPORT_VALUES = {50, 100, 150, 200, 250, 300, 350, 400, 450, 500}
 DATE_RANGE_VALUES = {"week", "month", "half-year", "year", "ytd", "last-year"}
+
+
+async def _validate_prompt_access(
+    db: AsyncSession, prompt_id: int | None, user, error_prefix: str = "",
+) -> None:
+    if prompt_id is None:
+        return
+    result = await db.execute(select(SystemPrompt).where(SystemPrompt.id == prompt_id))
+    prompt = result.scalar_one_or_none()
+    if not prompt:
+        raise ValidationError(f"{error_prefix}提示词模板不存在")
+    if user.role != "admin" and prompt.creator_id != user.id:
+        raise ValidationError(f"{error_prefix}只能使用自己的提示词")
 
 
 def validate_search_params(params: dict) -> None:
@@ -101,6 +115,12 @@ async def list_meta_tasks(
     count_stmt = select(func.count(MetaTask.id)).where(*where)
     total = (await db.execute(count_stmt)).scalar()
 
+    prompt_ids = list({t.prompt_template_id for t in tasks if t.prompt_template_id})
+    prompt_map = {}
+    if prompt_ids:
+        prompts = await db.execute(select(SystemPrompt).where(SystemPrompt.id.in_(prompt_ids)))
+        prompt_map = {p.id: p.name for p in prompts.scalars().all()}
+
     items = []
     for t in tasks:
         llm_names = [link.llm_config.name for link in t.llm_config_links if link.llm_config]
@@ -113,6 +133,7 @@ async def list_meta_tasks(
             "description": t.description,
             "search_params": t.search_params,
             "prompt_template_id": t.prompt_template_id,
+            "prompt_template_name": prompt_map.get(t.prompt_template_id) if t.prompt_template_id else None,
             "llm_config_names": llm_names,
             "creator_id": t.creator_id,
             "creator_name": t.creator.username if t.creator else "",
@@ -132,6 +153,7 @@ async def create_meta_task(
 ):
     if not data.llm_config_ids:
         raise ValidationError("At least one LLM config is required")
+    await _validate_prompt_access(db, data.prompt_template_id, current_user)
     task = MetaTask(
         name=data.name,
         description=data.description,
@@ -184,6 +206,11 @@ async def get_meta_task(
         .order_by(desc(TaskInstance.created_at))
         .limit(5)
     )
+    prompt_template_name = None
+    if task.prompt_template_id:
+        pt = await db.execute(select(SystemPrompt.name).where(SystemPrompt.id == task.prompt_template_id))
+        prompt_template_name = pt.scalar()
+
     instances = [
         {"id": inst.id, "instance_no": inst.instance_no, "status": inst.status, "created_at": inst.created_at.isoformat() if inst.created_at else ""}
         for inst in recent_instances.scalars().all()
@@ -194,6 +221,7 @@ async def get_meta_task(
         "description": task.description,
         "search_params": json.loads(task.search_params) if task.search_params else {},
         "prompt_template_id": task.prompt_template_id,
+        "prompt_template_name": prompt_template_name,
         "llm_configs": llm_configs,
         "schedule_cron": task.schedule_cron,
         "is_periodic": task.is_periodic,
@@ -228,6 +256,7 @@ async def update_meta_task(
     if data.search_params is not None:
         task.search_params = json.dumps(data.search_params, ensure_ascii=False)
     if data.prompt_template_id is not None:
+        await _validate_prompt_access(db, data.prompt_template_id, current_user)
         task.prompt_template_id = data.prompt_template_id
     if data.schedule_cron is not None:
         task.schedule_cron = data.schedule_cron

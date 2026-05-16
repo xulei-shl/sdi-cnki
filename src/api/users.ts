@@ -1,8 +1,8 @@
 import http from '@/lib/http'
-import type { User } from '@/types'
+import type { User, PaginatedResponse } from '@/types'
 
-export function getUsers() {
-  return http.get<User[]>('/users')
+export function getUsers(params = {}) {
+  return http.get<PaginatedResponse<User>>('/users', { params })
 }
 
 export function createUser(data: Partial<User> & { password: string }) {

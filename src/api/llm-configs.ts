@@ -1,8 +1,8 @@
 import http from '@/lib/http'
-import type { LlmConfig } from '@/types'
+import type { LlmConfig, PaginatedResponse } from '@/types'
 
-export function getLlmConfigs() {
-  return http.get<LlmConfig[]>('/llm-configs')
+export function getLlmConfigs(params = {}) {
+  return http.get<PaginatedResponse<LlmConfig>>('/llm-configs', { params })
 }
 
 export function createLlmConfig(data: Partial<LlmConfig>) {
