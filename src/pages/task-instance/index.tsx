@@ -322,7 +322,7 @@ export default function TaskInstancePage() {
               <DetailRow label="更新时间范围">{DATE_RANGE_LABELS[(selectedInstance as any).execution_params?.search_params?.date_range as string] || '-'}</DetailRow>
               <DetailRow label="核心期刊">{(selectedInstance as any).execution_params?.search_params?.core_only ? '是' : '否'}</DetailRow>
               <DetailRow label="同义词扩展">{(selectedInstance as any).execution_params?.search_params?.synonym_extend ? '是' : '否'}</DetailRow>
-              <DetailRow label="包含无全文">{(selectedInstance as any).execution_params?.search_params?.include_no_fulltext ? '是' : '否'}</DetailRow>
+              {/* <DetailRow label="包含无全文">{(selectedInstance as any).execution_params?.search_params?.include_no_fulltext ? '是' : '否'}</DetailRow> */}
               <DetailRow label="导出上限">{(selectedInstance as any).execution_params?.search_params?.max_export ?? '-'}</DetailRow>
             </DetailSection>
 

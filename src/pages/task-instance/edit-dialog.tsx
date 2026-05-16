@@ -34,7 +34,7 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
   const [dateRange, setDateRange] = useState('')
   const [coreOnly, setCoreOnly] = useState(false)
   const [synonymExtend, setSynonymExtend] = useState(false)
-  const [includeNoFulltext, setIncludeNoFulltext] = useState(false)
+  // const [includeNoFulltext, setIncludeNoFulltext] = useState(false)
   const [maxExport, setMaxExport] = useState(500)
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -48,7 +48,7 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
       setDateRange(sp.date_range || '')
       setCoreOnly(sp.core_only || false)
       setSynonymExtend(sp.synonym_extend || false)
-      setIncludeNoFulltext(sp.include_no_fulltext || false)
+      // setIncludeNoFulltext(sp.include_no_fulltext || false)
       setMaxExport(sp.max_export || 500)
       setErrors({})
     }
@@ -71,7 +71,7 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
         max_export: maxExport,
         core_only: coreOnly,
         synonym_extend: synonymExtend,
-        include_no_fulltext: includeNoFulltext,
+        // include_no_fulltext: includeNoFulltext,
       }
       if (dateRange) {
         searchParams.date_range = dateRange
@@ -143,10 +143,10 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
               <Checkbox checked={synonymExtend} onChange={(e) => setSynonymExtend(e.target.checked)} />
               同义词扩展
             </label>
-            <label className="flex items-center gap-2 text-sm">
+            {/* <label className="flex items-center gap-2 text-sm">
               <Checkbox checked={includeNoFulltext} onChange={(e) => setIncludeNoFulltext(e.target.checked)} />
               包含无全文
-            </label>
+            </label> */}
           </div>
 
           <div className="space-y-1">

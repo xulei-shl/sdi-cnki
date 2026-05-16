@@ -262,7 +262,7 @@ export default function MetaTaskPage() {
               <DetailRow label="更新时间范围">{DATE_RANGE_LABELS[(selectedTask as any).search_params?.date_range as string] || '-'}</DetailRow>
               <DetailRow label="核心期刊">{(selectedTask as any).search_params?.core_only ? '是' : '否'}</DetailRow>
               <DetailRow label="同义词扩展">{(selectedTask as any).search_params?.synonym_extend ? '是' : '否'}</DetailRow>
-              <DetailRow label="包含无全文">{(selectedTask as any).search_params?.include_no_fulltext ? '是' : '否'}</DetailRow>
+              {/* <DetailRow label="包含无全文">{(selectedTask as any).search_params?.include_no_fulltext ? '是' : '否'}</DetailRow> */}
               <DetailRow label="导出上限">{(selectedTask as any).search_params?.max_export ?? '-'}</DetailRow>
             </DetailSection>
 
