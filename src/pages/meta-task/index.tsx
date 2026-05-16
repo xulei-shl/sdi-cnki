@@ -167,18 +167,18 @@ export default function MetaTaskPage() {
 
         {/* Table */}
         <div className="flex-1 overflow-auto px-8 py-6">
-          <Table className="table-fixed">
+          <Table className="table-fixed min-w-[1200px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[180px]">任务名称</TableHead>
                 <TableHead>描述</TableHead>
-                <TableHead className="w-[130px]">LLM 配置</TableHead>
-                <TableHead className="w-[72px]">创建者</TableHead>
-                <TableHead className="w-[120px]">创建时间</TableHead>
+                <TableHead className="w-[240px]">LLM 配置</TableHead>
+                <TableHead className="w-[80px]">创建者</TableHead>
+                <TableHead className="w-[140px]">创建时间</TableHead>
                 <TableHead className="w-[80px] text-center">执行次数</TableHead>
                 <TableHead className="w-[80px]">状态</TableHead>
-                <TableHead className="w-[120px]">最后执行</TableHead>
-                <TableHead className="w-[140px] text-right">操作</TableHead>
+                <TableHead className="w-[140px]">最后执行</TableHead>
+                <TableHead className="w-[160px] text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -207,13 +207,13 @@ export default function MetaTaskPage() {
                   <TableCell>
                     <div className="flex gap-1 flex-wrap">
                       {task.llm_configs?.map((c) => (
-                        <Badge key={c.id} variant="secondary" className="text-xs">{c.name}</Badge>
+                        <Badge key={c.id} variant="secondary" className="text-xs truncate max-w-[200px]">{c.name}</Badge>
                       )) || (task as any).llm_config_names?.map((n: string, i: number) => (
-                        <Badge key={i} variant="secondary" className="text-xs">{n}</Badge>
+                        <Badge key={i} variant="secondary" className="text-xs truncate max-w-[200px]">{n}</Badge>
                       ))}
                     </div>
                   </TableCell>
-                  <TableCell>{task.creator_name || '-'}</TableCell>
+                  <TableCell className="truncate">{task.creator_name || '-'}</TableCell>
                   <TableCell>{formatDate(task.created_at)}</TableCell>
                   <TableCell className="text-center">{task.execution_count}</TableCell>
                   <TableCell>

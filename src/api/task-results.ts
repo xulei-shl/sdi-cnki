@@ -39,3 +39,21 @@ export function startDownload(instanceId: number) {
 export function getDownloadProgress(instanceId: number) {
   return http.get(`/task-instances/${instanceId}/download-progress`)
 }
+
+export function startExport(instanceId: number) {
+  return http.post<{ export_id: number; status: string; message: string }>(`/task-instances/${instanceId}/export`)
+}
+
+export function getExportStatus(exportId: number) {
+  return http.get<{
+    id: number
+    task_instance_id: number
+    status: string
+    file_path: string | null
+    file_size: number | null
+    error_message: string | null
+    expires_at: string | null
+    created_at: string
+    completed_at: string | null
+  }>(`/exports/${exportId}/status`)
+}

@@ -11,7 +11,7 @@ import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detai
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { getTaskInstance } from '@/api/task-instances'
-import { getTaskResults, markPass, batchUpdateResults, startDownload } from '@/api/task-results'
+import { getTaskResults, markPass, batchUpdateResults, startDownload, startExport, getExportStatus } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
 import { Check } from 'lucide-react'
 import type { TaskInstance, TaskStatus } from '@/types'
@@ -80,6 +80,7 @@ export default function TaskResultPage() {
   const [minScore, setMinScore] = useState('')
   const [includeDuplicate, setIncludeDuplicate] = useState(false)
 
+  const [exporting, setExporting] = useState(false)
   const sseRef = useRef<SseClient | null>(null)
   const getAuthToken = () => localStorage.getItem('access_token') || ''
 
@@ -129,6 +130,15 @@ export default function TaskResultPage() {
     })
     sse.on('task.completed', () => { fetchInstance(); fetchResults() })
     sse.on('task.failed', () => { fetchInstance(); fetchResults() })
+    sse.on('export.completed', (data: any) => {
+      setExporting(false)
+      if (data?.export_id) window.open(`/api/v1/exports/${data.export_id}/download`, '_blank')
+      toast.success('导出完成')
+    })
+    sse.on('export.failed', (data: any) => {
+      setExporting(false)
+      toast.error(`导出失败: ${data?.error_message || ''}`)
+    })
     sse.connect()
 
     return () => { sse.close() }
@@ -197,6 +207,39 @@ export default function TaskResultPage() {
       await startDownload(instanceId)
       toast.success('下载任务已加入队列')
     } catch { toast.error('启动下载失败') }
+  }
+
+  const handleExport = async () => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      const res = await startExport(instanceId)
+      const exportId = res.data.export_id
+      toast.success('导出任务已加入队列')
+
+      const poll = async () => {
+        try {
+          const sr = await getExportStatus(exportId)
+          if (sr.data.status === 'completed') {
+            setExporting(false)
+            window.open(`/api/v1/exports/${exportId}/download`, '_blank')
+            toast.success('导出完成')
+          } else if (sr.data.status === 'failed') {
+            setExporting(false)
+            toast.error(`导出失败: ${sr.data.error_message || ''}`)
+          } else {
+            setTimeout(poll, 3000)
+          }
+        } catch {
+          setExporting(false)
+          toast.error('查询导出状态失败')
+        }
+      }
+      setTimeout(poll, 3000)
+    } catch {
+      setExporting(false)
+      toast.error('启动导出失败')
+    }
   }
 
   const viewDetail = (row: any) => {
@@ -298,6 +341,11 @@ export default function TaskResultPage() {
               {selectedIds.size > 0 && <span className="text-sm font-medium text-primary">已选中 {selectedIds.size} 项</span>}
               <Button size="sm" variant="secondary" disabled={selectedIds.size === 0} onClick={handleBatchPass}>批量通过</Button>
               <Button size="sm" variant="secondary" disabled={selectedIds.size === 0} onClick={handleBatchReject}>批量拒绝</Button>
+              {['analyzing_completed', 'completed', 'failed'].includes(instance?.status || '') && (
+                <Button size="sm" onClick={handleExport} disabled={exporting}>
+                  {exporting ? '导出中...' : '结果导出'}
+                </Button>
+              )}
               {['analyzing_completed', 'ready_for_download', 'downloading'].includes(instance?.status || '') && (
                 <Button size="sm" onClick={handleDownload}>开始下载</Button>
               )}

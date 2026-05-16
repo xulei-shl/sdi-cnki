@@ -9,6 +9,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
 import { toast } from 'sonner'
 import { getTaskInstances, getTaskInstance, deleteTaskInstance, runTaskInstance, type TaskInstanceQuery } from '@/api/task-instances'
+import { startExport, getExportStatus } from '@/api/task-results'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EditDialog } from './edit-dialog'
 import type { TaskInstance, TaskStatus } from '@/types'
@@ -60,6 +61,41 @@ export default function TaskInstancePage() {
   const [confirmRun, setConfirmRun] = useState<TaskInstance | null>(null)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editInstance, setEditInstance] = useState<TaskInstance | null>(null)
+  const [exportingId, setExportingId] = useState<number | null>(null)
+
+  const handleExport = async (e: React.MouseEvent, inst: TaskInstance) => {
+    e.stopPropagation()
+    if (exportingId === inst.id) return
+    setExportingId(inst.id)
+    try {
+      const res = await startExport(inst.id)
+      const exportId = res.data.export_id
+      toast.success('导出任务已加入队列')
+
+      const poll = async () => {
+        try {
+          const sr = await getExportStatus(exportId)
+          if (sr.data.status === 'completed') {
+            setExportingId(null)
+            window.open(`/api/v1/exports/${exportId}/download`, '_blank')
+            toast.success('导出完成')
+          } else if (sr.data.status === 'failed') {
+            setExportingId(null)
+            toast.error(`导出失败: ${sr.data.error_message || '未知错误'}`)
+          } else {
+            setTimeout(poll, 3000)
+          }
+        } catch {
+          setExportingId(null)
+          toast.error('查询导出状态失败')
+        }
+      }
+      setTimeout(poll, 3000)
+    } catch {
+      setExportingId(null)
+      toast.error('启动导出失败')
+    }
+  }
 
   const fetchInstances = useCallback(async () => {
     setLoading(true)
@@ -242,9 +278,9 @@ export default function TaskInstancePage() {
                             {deletingId === inst.id ? '删除中...' : '删除'}
                           </Button>
                         )}
-                        {inst.status === 'analyzing_completed' && (
-                          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); toast.info('下载功能开发中') }}>
-                            下载
+                        {['analyzing_completed', 'completed', 'failed'].includes(inst.status) && (
+                          <Button variant="ghost" size="sm" onClick={(e) => handleExport(e, inst)} disabled={exportingId === inst.id}>
+                            {exportingId === inst.id ? '导出中...' : '结果导出'}
                           </Button>
                         )}
                       </div>
