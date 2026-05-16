@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { toast } from 'sonner'
-import { getSystemConfigs, updateSystemConfig } from '@/api/system'
+import { getSystemConfigs, updateSystemConfig, testWebhookConfig } from '@/api/system'
 
 interface ConfigEntry {
   key: string
@@ -18,6 +18,7 @@ export default function SystemConfigPage() {
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState<Record<string, string>>({})
   const [filterKey, setFilterKey] = useState('')
+  const [testingWebhook, setTestingWebhook] = useState(false)
 
   const fetchData = async () => {
     setLoading(true)
@@ -46,6 +47,18 @@ export default function SystemConfigPage() {
       fetchData()
     } catch {
       toast.error('保存失败')
+    }
+  }
+
+  const handleTestWebhook = async (key: string) => {
+    setTestingWebhook(true)
+    try {
+      await testWebhookConfig(key, editing[key])
+      toast.success('测试通知发送成功')
+    } catch {
+      toast.error('测试发送失败')
+    } finally {
+      setTestingWebhook(false)
     }
   }
 
@@ -105,6 +118,17 @@ export default function SystemConfigPage() {
                   {formatDate(cfg.updated_at)}
                 </TableCell>
                 <TableCell className="text-right">
+                  {cfg.key === 'webhook_enterprise_wechat' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mr-2"
+                      onClick={() => handleTestWebhook(cfg.key)}
+                      disabled={testingWebhook}
+                    >
+                      测试
+                    </Button>
+                  )}
                   <Button size="sm" onClick={() => handleSave(cfg.key)}>保存</Button>
                 </TableCell>
               </TableRow>

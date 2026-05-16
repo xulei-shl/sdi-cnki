@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+
+import httpx
 
 from app.database import get_db
 from app.models.system_config import SystemConfig
@@ -55,6 +57,34 @@ async def update_config(
     config.updated_by = admin.id
     await db.commit()
     return {"key": config.key, "value": config.value}
+
+
+@router.post("/configs/{key}/test")
+async def test_config(
+    key: str,
+    data: SystemConfigUpdate,
+    admin = Depends(require_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if key != "webhook_enterprise_wechat":
+        raise HTTPException(status_code=400, detail="该配置项不支持测试")
+    url = data.value.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Webhook URL 为空")
+    payload = {
+        "msgtype": "markdown",
+        "markdown": {
+            "content": "## 测试消息\n这是一条来自 SDI-CNKI 系统的测试通知。\n> 如果您收到此消息，说明 Webhook 配置正确。"
+        },
+    }
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(url, json=payload)
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=400,
+            detail=f"发送失败: HTTP {resp.status_code}",
+        )
+    return {"message": "测试通知发送成功"}
 
 
 @router.get("/stats")
