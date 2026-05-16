@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
 from pathlib import Path
+
+from app.utils import timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,7 +40,7 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
         return
 
     instance.status = "downloading"
-    instance.download_started_at = datetime.utcnow()
+    instance.download_started_at = timezone.now()
     await db.commit()
 
     try:
@@ -55,7 +56,7 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
 
         if not records:
             instance.status = "completed"
-            instance.completed_at = datetime.utcnow()
+            instance.completed_at = timezone.now()
             await db.commit()
             await svc.complete(item_id, '{"status": "completed", "downloaded": 0}')
             return
@@ -122,7 +123,7 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
             await db.flush()
 
         instance.status = "completed"
-        instance.completed_at = datetime.utcnow()
+        instance.completed_at = timezone.now()
         await db.commit()
 
         await svc.complete(item_id, json.dumps({
@@ -138,7 +139,7 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
             "success": success, "failed": failed, "skipped": skipped, "total": len(records),
         })
         await broadcast_event(instance_id, "task.completed", {
-            "status": "completed", "completed_at": datetime.utcnow().isoformat(),
+            "status": "completed", "completed_at": timezone.now().isoformat(),
         })
 
         from app.services.wecom_notifier import send_notification
@@ -148,7 +149,7 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
             "instance_no": instance.instance_no,
             "status": "completed",
             "started_at": instance.started_at.isoformat() if instance.started_at else "",
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": timezone.now().isoformat(),
             "stats": {
                 "total": instance.search_result_count or 0,
                 "valid": instance.valid_data_count or 0,

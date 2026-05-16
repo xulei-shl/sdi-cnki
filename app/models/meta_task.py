@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
-
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, text
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base
+from app.utils import timezone
 
 
 class MetaTask(Base):
@@ -22,8 +21,8 @@ class MetaTask(Base):
     is_active = Column(Boolean, default=True, index=True)
     last_executed_at = Column(DateTime)
     execution_count = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now(), nullable=False)
+    created_at = Column(DateTime, default=timezone.now, server_default=text("(datetime('now', 'localtime'))"), nullable=False)
+    updated_at = Column(DateTime, default=timezone.now, onupdate=timezone.now, server_default=text("(datetime('now', 'localtime'))"), nullable=False)
 
     creator = relationship("User", back_populates="meta_tasks")
     llm_config_links = relationship("MetaTaskLlmConfig", back_populates="meta_task", cascade="all, delete-orphan")

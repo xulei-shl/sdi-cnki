@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
 from typing import Any
+
+from app.utils import timezone
 
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -98,7 +99,7 @@ async def run_llm_analysis(
             logger.info(f"LLM progress: {analyzed}/{total} analyzed, {failed} failed")
 
         instance.status = "analyzing_completed"
-        instance.analysis_completed_at = datetime.utcnow()
+        instance.analysis_completed_at = timezone.now()
         await db.commit()
 
         await svc.complete(item_id, json.dumps({"analyzed": analyzed, "failed": failed}))
@@ -107,7 +108,7 @@ async def run_llm_analysis(
             "analyzed": analyzed,
             "total": total,
             "failed": failed,
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": timezone.now().isoformat(),
         })
 
         from app.services.wecom_notifier import send_notification
@@ -117,7 +118,7 @@ async def run_llm_analysis(
             "instance_no": instance.instance_no,
             "status": "analyzing_completed",
             "started_at": instance.started_at.isoformat() if instance.started_at else "",
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": timezone.now().isoformat(),
             "stats": {
                 "total": instance.search_result_count or 0,
                 "valid": instance.valid_data_count or 0,
@@ -146,7 +147,7 @@ async def run_llm_analysis(
             "status": "failed",
             "error_message": str(e)[:500],
             "started_at": instance.started_at.isoformat() if instance.started_at else "",
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": timezone.now().isoformat(),
             "stats": {},
         })
 
@@ -233,7 +234,7 @@ async def _process_one(
                 parsed_result=parsed_result_str,
                 llm_config_id=used_config_id,
                 attempt_count=1,
-                finished_at=datetime.utcnow(),
+                finished_at=timezone.now(),
             )
         except ValueError as e:
             analysis = LlmAnalysisResult(
@@ -244,7 +245,7 @@ async def _process_one(
                 error_message=str(e)[:500],
                 llm_config_id=used_config_id,
                 attempt_count=1,
-                finished_at=datetime.utcnow(),
+                finished_at=timezone.now(),
             )
             db.add(analysis)
             return False, str(e)[:500]
@@ -260,7 +261,7 @@ async def _process_one(
             raw_response="",
             error_message=str(e)[:500],
             attempt_count=1,
-            finished_at=datetime.utcnow(),
+            finished_at=timezone.now(),
         )
         db.add(analysis)
         return False, str(e)[:500]
@@ -274,7 +275,7 @@ async def _finish_with_no_data(
     instance_id: int,
 ) -> None:
     instance.status = "analyzing_completed"
-    instance.analysis_completed_at = datetime.utcnow()
+    instance.analysis_completed_at = timezone.now()
     await db.commit()
 
     await svc.complete(item_id, '{"analyzed": 0, "failed": 0}')
@@ -285,6 +286,6 @@ async def _finish_with_no_data(
         "analyzed": 0,
         "total": 0,
         "failed": 0,
-        "completed_at": datetime.utcnow().isoformat(),
+        "completed_at": timezone.now().isoformat(),
     })
     logger.info(f"Instance {instance.instance_no}: no results to analyze")

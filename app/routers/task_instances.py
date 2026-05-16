@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from typing import Optional
+
+from app.utils import timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -22,7 +23,7 @@ router = APIRouter()
 
 
 async def _create_instance(db: AsyncSession, task: MetaTask, user, auto_run: bool = True) -> TaskInstance:
-    today = datetime.utcnow().strftime("%Y%m%d")
+    today = timezone.now().strftime("%Y%m%d")
     last = await db.execute(
         select(func.max(TaskInstance.instance_no))
         .where(TaskInstance.instance_no.like(f"T{today}%"))
@@ -53,7 +54,7 @@ async def _create_instance(db: AsyncSession, task: MetaTask, user, auto_run: boo
     db.add(instance)
     await db.flush()
     task.execution_count = (task.execution_count or 0) + 1
-    task.last_executed_at = datetime.utcnow()
+    task.last_executed_at = timezone.now()
     await db.commit()
     await db.refresh(instance)
     return instance

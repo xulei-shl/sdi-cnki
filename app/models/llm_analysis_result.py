@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, text
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base
+from app.utils import timezone
 
 
 class LlmAnalysisResult(Base):
@@ -22,7 +21,7 @@ class LlmAnalysisResult(Base):
     llm_config_id = Column(Integer)
     attempt_count = Column(Integer, default=0)
     finished_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
+    created_at = Column(DateTime, default=timezone.now, server_default=text("(datetime('now', 'localtime'))"), nullable=False)
 
     task_result = relationship("TaskResult", back_populates="llm_analysis")
     task_instance = relationship("TaskInstance")

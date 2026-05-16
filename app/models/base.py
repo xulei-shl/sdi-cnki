@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, func
+from sqlalchemy import Column, DateTime, text
 from sqlalchemy.orm import DeclarativeBase
+
+from app.utils import timezone
 
 
 class Base(DeclarativeBase):
@@ -11,4 +11,4 @@ class Base(DeclarativeBase):
 
 
 class TimestampMixin:
-    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
+    created_at = Column(DateTime, default=timezone.now, server_default=text("(datetime('now', 'localtime'))"), nullable=False)

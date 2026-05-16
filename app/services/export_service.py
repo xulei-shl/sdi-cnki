@@ -5,8 +5,9 @@ import os
 import shutil
 import tempfile
 import zipfile
-from datetime import datetime, timezone
 from typing import Any
+
+from app.utils import timezone
 
 import openpyxl
 from openpyxl.styles import Font
@@ -225,10 +226,9 @@ def _collect_pdfs(task_results: list[TaskResult], pdfs_dir: str) -> int:
 
 def cleanup_expired_exports(db: AsyncSession) -> int:
     """清理过期的导出文件。返回清理数量。"""
-    from sqlalchemy import select, delete
-    import datetime
+    from sqlalchemy import select
 
-    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+    now = timezone.now()
     stmt = select(ExportTask).where(
         ExportTask.expires_at.isnot(None),
         ExportTask.expires_at < now,

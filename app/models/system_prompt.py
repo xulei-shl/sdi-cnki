@@ -1,8 +1,8 @@
 from __future__ import annotations
-from datetime import datetime
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, text
 from sqlalchemy.orm import relationship
 from app.models.base import Base
+from app.utils import timezone
 
 class SystemPrompt(Base):
     __tablename__ = "system_prompts"
@@ -14,7 +14,7 @@ class SystemPrompt(Base):
     tags = Column(String(200))
     is_active = Column(Boolean, default=True)
     creator_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now(), nullable=False)
+    created_at = Column(DateTime, default=timezone.now, server_default=text("(datetime('now', 'localtime'))"), nullable=False)
+    updated_at = Column(DateTime, default=timezone.now, onupdate=timezone.now, server_default=text("(datetime('now', 'localtime'))"), nullable=False)
 
     creator = relationship("User", back_populates="user_prompts")

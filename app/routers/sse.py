@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
 from typing import Any
+
+from app.utils import timezone
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -118,7 +119,7 @@ async def sse_events(
 
                 sync_status = await _get_instance_status(db, instance_id)
                 if sync_status and sync_status["status"] in ("completed", "failed", "cancelled"):
-                    yield f"event: task.{sync_status['status']}\ndata: {json.dumps({'status': sync_status['status'], 'completed_at': datetime.now(timezone.utc).isoformat()}, ensure_ascii=False)}\n\n"
+                    yield f"event: task.{sync_status['status']}\ndata: {json.dumps({'status': sync_status['status'], 'completed_at': timezone.now().isoformat()}, ensure_ascii=False)}\n\n"
                     async with _event_conditions.get(instance_id, asyncio.Condition()):
                         _event_store.pop(instance_id, None)
                         _event_conditions.pop(instance_id, None)

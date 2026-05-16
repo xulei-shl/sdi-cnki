@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, text
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base
+from app.utils import timezone
 
 
 class OperationLog(Base):
@@ -18,6 +17,6 @@ class OperationLog(Base):
     resource_id = Column(Integer)
     details = Column(Text)
     ip_address = Column(String(50))
-    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
+    created_at = Column(DateTime, default=timezone.now, server_default=text("(datetime('now', 'localtime'))"), nullable=False)
 
     user = relationship("User", back_populates="operation_logs")

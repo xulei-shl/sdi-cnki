@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional
+
+from app.utils import timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -128,7 +129,7 @@ async def update_template(
         template.tags = data.tags
     if data.is_active is not None:
         template.is_active = data.is_active
-    template.updated_at = datetime.utcnow()
+    template.updated_at = timezone.now()
     await db.commit()
     return {"id": template.id, "name": template.name}
 

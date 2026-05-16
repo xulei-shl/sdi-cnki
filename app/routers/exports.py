@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, Query
+
+from app.utils import timezone
 from fastapi.responses import FileResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -97,7 +97,7 @@ async def download_export(
     if not task.file_path or not os.path.isfile(task.file_path):
         raise NotFoundError("Export file", "文件不存在")
 
-    if task.expires_at and datetime.utcnow() > task.expires_at.replace(tzinfo=None) if task.expires_at.tzinfo else task.expires_at:
+    if task.expires_at and timezone.now() > task.expires_at:
         raise ValidationError("下载链接已过期")
 
     filename = os.path.basename(task.file_path)

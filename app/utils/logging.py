@@ -3,8 +3,9 @@ from __future__ import annotations
 import logging
 import json
 import sys
-from datetime import datetime
 from contextvars import ContextVar
+
+from app.utils import timezone
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 user_id_var: ContextVar[int | None] = ContextVar("user_id", default=None)
@@ -13,7 +14,7 @@ user_id_var: ContextVar[int | None] = ContextVar("user_id", default=None)
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": timezone.now().isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

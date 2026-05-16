@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
-
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, func
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, text
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base
+from app.utils import timezone
 
 
 class User(Base):
@@ -17,8 +16,8 @@ class User(Base):
     email = Column(String(100))
     role = Column(String(20), default="user", nullable=False)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now(), nullable=False)
+    created_at = Column(DateTime, default=timezone.now, server_default=text("(datetime('now', 'localtime'))"), nullable=False)
+    updated_at = Column(DateTime, default=timezone.now, onupdate=timezone.now, server_default=text("(datetime('now', 'localtime'))"), nullable=False)
 
     meta_tasks = relationship("MetaTask", back_populates="creator")
     task_instances = relationship("TaskInstance", back_populates="creator")

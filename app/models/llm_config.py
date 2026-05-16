@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
-
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, text
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base
+from app.utils import timezone
 
 
 class LlmConfig(Base):
@@ -18,8 +17,8 @@ class LlmConfig(Base):
     api_endpoint = Column(String(500), nullable=False)
     is_active = Column(Boolean, default=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now(), nullable=False)
+    created_at = Column(DateTime, default=timezone.now, server_default=text("(datetime('now', 'localtime'))"), nullable=False)
+    updated_at = Column(DateTime, default=timezone.now, onupdate=timezone.now, server_default=text("(datetime('now', 'localtime'))"), nullable=False)
 
     creator = relationship("User", back_populates="llm_configs")
     task_links = relationship("MetaTaskLlmConfig", back_populates="llm_config")

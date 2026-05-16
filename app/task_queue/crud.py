@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
+
+from app.utils import timezone
 
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,7 +54,7 @@ class TaskQueueService:
         item = result.scalar_one_or_none()
         if item:
             item.status = "running"
-            item.started_at = datetime.utcnow()
+            item.started_at = timezone.now()
             await self.db.commit()
         return item
 
@@ -63,7 +64,7 @@ class TaskQueueService:
         item = result.scalar_one_or_none()
         if item:
             item.status = "completed"
-            item.completed_at = datetime.utcnow()
+            item.completed_at = timezone.now()
             if result_json:
                 item.result_json = result_json
             await self.db.commit()
@@ -79,7 +80,7 @@ class TaskQueueService:
             else:
                 item.status = "retrying"
             item.error_message = error_message
-            item.completed_at = datetime.utcnow()
+            item.completed_at = timezone.now()
             await self.db.commit()
 
     async def retry_failed(self, item_id: int) -> None:

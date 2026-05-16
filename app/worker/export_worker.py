@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from app.utils import timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,8 +49,8 @@ async def run_export(db: AsyncSession, task_item_id: int, params_json: str) -> N
         export_task.status = "completed"
         export_task.file_path = zip_path
         export_task.file_size = file_size
-        export_task.expires_at = datetime.utcnow() + timedelta(hours=expiry_hours)
-        export_task.completed_at = datetime.utcnow()
+        export_task.expires_at = timezone.now() + timedelta(hours=expiry_hours)
+        export_task.completed_at = timezone.now()
         await db.commit()
 
         await broadcast_event(
@@ -65,7 +67,7 @@ async def run_export(db: AsyncSession, task_item_id: int, params_json: str) -> N
     except Exception as e:
         export_task.status = "failed"
         export_task.error_message = str(e)
-        export_task.completed_at = datetime.utcnow()
+        export_task.completed_at = timezone.now()
         await db.commit()
 
         await broadcast_event(

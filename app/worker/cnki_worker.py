@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
 from pathlib import Path
+
+from app.utils import timezone
 from typing import Any
 
 from sqlalchemy import select, func
@@ -62,7 +63,7 @@ async def process_search_results(
         instance.search_result_count = 0
         instance.valid_data_count = 0
         instance.duplicate_count = 0
-        instance.search_completed_at = datetime.utcnow()
+        instance.search_completed_at = timezone.now()
         instance.search_result_file_path = None
         await db.commit()
         logger.info(f"Instance {instance.instance_no}: no results")
@@ -121,7 +122,7 @@ async def process_search_results(
     instance.search_result_count = total
     instance.valid_data_count = total - duplicate_count
     instance.duplicate_count = duplicate_count
-    instance.search_completed_at = datetime.utcnow()
+    instance.search_completed_at = timezone.now()
     await db.commit()
     logger.info(
         f"Instance {instance.instance_no}: inserted {inserted}, "
@@ -150,7 +151,7 @@ async def run_cnki_search(
         return
 
     instance.status = "running"
-    instance.started_at = datetime.utcnow()
+    instance.started_at = timezone.now()
     await db.commit()
 
     try:
@@ -189,7 +190,7 @@ async def run_cnki_search(
             "instance_no": instance.instance_no,
             "status": "search_completed",
             "started_at": instance.started_at.isoformat() if instance.started_at else "",
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": timezone.now().isoformat(),
             "stats": {
                 "total": instance.search_result_count or 0,
                 "valid": instance.valid_data_count or 0,
@@ -213,7 +214,7 @@ async def run_cnki_search(
         instance.search_result_count = 0
         instance.valid_data_count = 0
         instance.duplicate_count = 0
-        instance.search_completed_at = datetime.utcnow()
+        instance.search_completed_at = timezone.now()
         await db.commit()
         await svc.complete(item_id, '{"status": "no_results"}')
     except Exception as e:
