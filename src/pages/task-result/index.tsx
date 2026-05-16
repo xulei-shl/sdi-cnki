@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { getTaskInstance } from '@/api/task-instances'
 import { getTaskResults, markPass, batchUpdateResults, startDownload } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
+import { Check } from 'lucide-react'
 import type { TaskInstance, TaskStatus } from '@/types'
 
 const STEP_CONFIG: { label: string; match: TaskStatus[] }[] = [
@@ -214,32 +215,32 @@ export default function TaskResultPage() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-3 border-b shrink-0">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate('/task-instances')}>&lt; 返回</Button>
-          <span className="font-medium">{instance?.instance_no} - {instance?.meta_task_name}</span>
-          {instance?.status === 'failed' && <Badge variant="destructive">{instance.error_message}</Badge>}
-          {instance?.status === 'cancelled' && <Badge variant="secondary">已取消</Badge>}
+      {/* Header Area */}
+      <div className="px-8 pt-8 pb-8 border-b shrink-0 flex flex-col gap-8 bg-muted/10">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={() => navigate('/task-instances')}>&lt; 返回</Button>
+            <span className="font-medium text-lg">{instance?.instance_no} - {instance?.meta_task_name}</span>
+            {instance?.status === 'failed' && <Badge variant="destructive">{instance.error_message}</Badge>}
+            {instance?.status === 'cancelled' && <Badge variant="secondary">已取消</Badge>}
+          </div>
+          <span className="text-sm text-muted-foreground">{formatDate(instance?.created_at)}</span>
         </div>
-        <span className="text-sm text-muted-foreground">{formatDate(instance?.created_at)}</span>
-      </div>
 
-      {/* Stage Indicator */}
-      <div className="px-6 py-4 border-b shrink-0 bg-muted/20">
-        <div className="flex items-center justify-between max-w-3xl mx-auto">
+        {/* Stage Indicator */}
+        <div className="flex items-center justify-between max-w-3xl mx-auto w-full">
           {STEP_CONFIG.map((step, i) => {
             const isActive = i === stepIndex
             const isDone = i < stepIndex
             const isError = instance?.status === 'failed'
             return (
-              <div key={step.label} className="flex flex-col items-center gap-1">
+              <div key={step.label} className="flex flex-col items-center gap-2">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium border-2
                   ${isError && i === STEP_CONFIG.length - 1 ? 'border-destructive bg-destructive text-destructive-foreground' : ''}
-                  ${isActive && !isError ? 'border-primary bg-primary text-primary-foreground' : ''}
+                  ${isActive && !isError ? 'border-primary bg-primary text-primary-foreground shadow-sm' : ''}
                   ${isDone && !isError ? 'border-green-500 bg-green-500 text-white' : ''}
                   ${!isActive && !isDone && !(isError && i === STEP_CONFIG.length - 1) ? 'border-muted-foreground/30 text-muted-foreground' : ''}`}>
-                  {isDone ? '✓' : i + 1}
+                  {isDone ? <Check className="w-4 h-4" /> : i + 1}
                 </div>
                 <span className={`text-xs ${isActive ? 'font-medium text-primary' : isDone ? 'text-green-600' : 'text-muted-foreground'}`}>
                   {step.label}
@@ -249,57 +250,62 @@ export default function TaskResultPage() {
           })}
         </div>
         {analyzeProgress.active && analyzeProgress.total > 0 && (
-          <div className="mt-2 text-center text-xs text-blue-500">
+          <div className="text-center text-xs text-blue-500 animate-pulse transition-all duration-300">
+            <span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-2" />
             LLM 分析进度: {analyzeProgress.analyzed} / {analyzeProgress.total} (失败 {analyzeProgress.failed})
           </div>
         )}
         {downloadProgress.active && (
-          <div className="mt-2 text-center text-xs text-blue-500">
+          <div className="text-center text-xs text-amber-500 animate-pulse transition-all duration-300">
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-2" />
             下载进度: 成功 {downloadProgress.success} / 失败 {downloadProgress.failed} / 跳过 {downloadProgress.skipped} / 总计 {downloadProgress.total}
           </div>
         )}
       </div>
 
-      {/* Batch Actions */}
-      <div className="px-6 py-2 border-b shrink-0 flex items-center gap-2">
-        <Button size="sm" variant="secondary" disabled={selectedIds.size === 0} onClick={handleBatchPass}>批量通过</Button>
-        <Button size="sm" variant="secondary" disabled={selectedIds.size === 0} onClick={handleBatchReject}>批量拒绝</Button>
-        <div className="flex-1" />
-        {['analyzing_completed', 'ready_for_download', 'downloading'].includes(instance?.status || '') && (
-          <Button size="sm" onClick={handleDownload}>开始下载</Button>
-        )}
-      </div>
-
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         {/* Results Table */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {/* Filters */}
-          <div className="px-4 py-2 border-b shrink-0 flex items-center gap-2 flex-wrap">
-            <Select value={reviewStatus} onChange={(e) => setReviewStatus(e.target.value)} className="w-[120px]">
-              {REVIEW_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </Select>
-            <Select value={analysisStatus} onChange={(e) => setAnalysisStatus(e.target.value)} className="w-[120px]">
-              {ANALYSIS_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </Select>
-            <Input placeholder="期刊名称" value={journalKeyword} onChange={(e) => setJournalKeyword(e.target.value)} className="w-[150px]" />
-            <Input placeholder="年份" value={publishYear} onChange={(e) => setPublishYear(e.target.value)} className="w-[80px]" />
-            <Select value={minScore} onChange={(e) => setMinScore(e.target.value)} className="w-[100px]">
-              <option value="">评分不限</option>
-              <option value="4">≥4</option>
-              <option value="6">≥6</option>
-              <option value="8">≥8</option>
-              <option value="9">≥9</option>
-            </Select>
-            <label className="flex items-center gap-1 text-sm">
-              <Checkbox checked={includeDuplicate} onChange={(e) => setIncludeDuplicate(e.target.checked)} />
-              含重复
-            </label>
-            <Button size="sm" variant="secondary" onClick={handleFilter}>筛选</Button>
+          {/* Action & Filter Toolbar */}
+          <div className="px-8 py-5 border-b flex items-center justify-between flex-wrap gap-6 shrink-0">
+            {/* Filters */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <Select value={reviewStatus} onChange={(e) => setReviewStatus(e.target.value)} className="w-[120px]">
+                {REVIEW_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+              <Select value={analysisStatus} onChange={(e) => setAnalysisStatus(e.target.value)} className="w-[120px]">
+                {ANALYSIS_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+              <Input placeholder="期刊名称" value={journalKeyword} onChange={(e) => setJournalKeyword(e.target.value)} className="w-[150px]" />
+              <Input placeholder="年份" value={publishYear} onChange={(e) => setPublishYear(e.target.value)} className="w-[80px]" />
+              <Select value={minScore} onChange={(e) => setMinScore(e.target.value)} className="w-[100px]">
+                <option value="">评分不限</option>
+                <option value="4">≥4</option>
+                <option value="6">≥6</option>
+                <option value="8">≥8</option>
+                <option value="9">≥9</option>
+              </Select>
+              <label className="flex items-center gap-1 text-sm bg-accent/50 px-2 py-1.5 rounded-md">
+                <Checkbox checked={includeDuplicate} onChange={(e) => setIncludeDuplicate(e.target.checked)} />
+                <span className="ml-1">含重复</span>
+              </label>
+              <Button size="sm" variant="secondary" onClick={handleFilter}>筛选</Button>
+            </div>
+
+            {/* Batch Actions */}
+            <div className="flex items-center gap-3">
+              {selectedIds.size > 0 && <span className="text-sm font-medium text-primary">已选中 {selectedIds.size} 项</span>}
+              <Button size="sm" variant="secondary" disabled={selectedIds.size === 0} onClick={handleBatchPass}>批量通过</Button>
+              <Button size="sm" variant="secondary" disabled={selectedIds.size === 0} onClick={handleBatchReject}>批量拒绝</Button>
+              {['analyzing_completed', 'ready_for_download', 'downloading'].includes(instance?.status || '') && (
+                <Button size="sm" onClick={handleDownload}>开始下载</Button>
+              )}
+            </div>
           </div>
 
           {/* Table */}
-          <div className="flex-1 overflow-auto p-4">
+          <div className="flex-1 overflow-auto px-8 py-6">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -321,7 +327,14 @@ export default function TaskResultPage() {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-12">
+                      <div className="flex items-center justify-center gap-2 text-muted-foreground animate-pulse">
+                        <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                        数据加载中...
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 ) : results.length === 0 ? (
                   <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">暂无数据</TableCell></TableRow>
                 ) : results.map((row) => {
@@ -387,7 +400,7 @@ export default function TaskResultPage() {
           open={showDetail}
           title={activeResult?.title || ''}
           onClose={() => { setShowDetail(false); setActiveResult(null) }}
-          width={420}
+          width={640}
         >
           {activeResult && (
             <>

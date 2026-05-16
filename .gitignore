@@ -91,7 +91,6 @@ session/
 temp/
 
 .config/
-.gemini/
 .codex/
 .claude/
 .agent/

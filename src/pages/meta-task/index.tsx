@@ -132,17 +132,17 @@ export default function MetaTaskPage() {
     isActive ? '启用' : '禁用'
 
   return (
-    <div className="h-full flex overflow-hidden">
+    <div className="h-full flex overflow-hidden relative">
       {/* Middle: List Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Search Bar */}
-        <div className="p-4 border-b flex items-center gap-3">
+        <div className="px-8 py-6 border-b flex items-center gap-4">
           <Input
             placeholder="按任务名称搜索..."
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            className="max-w-xs"
+            className="w-[320px]"
           />
           <Button variant="secondary" onClick={handleSearch}>检索</Button>
           <div className="flex-1" />
@@ -150,7 +150,7 @@ export default function MetaTaskPage() {
         </div>
 
         {/* Table */}
-        <div className="flex-1 overflow-auto p-4 pt-2">
+        <div className="flex-1 overflow-auto px-8 py-6">
           <Table>
             <TableHeader>
               <TableRow>
@@ -168,7 +168,12 @@ export default function MetaTaskPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">加载中...</TableCell>
+                  <TableCell colSpan={9} className="text-center py-12">
+                    <div className="flex items-center justify-center gap-2 text-muted-foreground animate-pulse">
+                      <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                      数据加载中...
+                    </div>
+                  </TableCell>
                 </TableRow>
               ) : tasks.length === 0 ? (
                 <TableRow>

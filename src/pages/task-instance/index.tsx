@@ -8,7 +8,9 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { Pagination } from '@/components/ui/pagination'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
 import { toast } from 'sonner'
-import { getTaskInstances, getTaskInstance, runTaskInstance, type TaskInstanceQuery } from '@/api/task-instances'
+import { getTaskInstances, getTaskInstance, deleteTaskInstance, runTaskInstance, type TaskInstanceQuery } from '@/api/task-instances'
+import { ConfirmDialog } from './confirm-dialog'
+import { EditDialog } from './edit-dialog'
 import type { TaskInstance, TaskStatus } from '@/types'
 
 const STATUS_MAP: Record<TaskStatus, { label: string; variant: 'info' | 'warning' | 'success' | 'destructive' | 'secondary' | 'default' }> = {
@@ -48,6 +50,10 @@ export default function TaskInstancePage() {
   const [selectedInstance, setSelectedInstance] = useState<TaskInstance | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [runningId, setRunningId] = useState<number | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<TaskInstance | null>(null)
+  const [confirmRun, setConfirmRun] = useState<TaskInstance | null>(null)
+  const [editInstance, setEditInstance] = useState<TaskInstance | null>(null)
 
   const fetchInstances = useCallback(async () => {
     setLoading(true)
@@ -78,17 +84,48 @@ export default function TaskInstancePage() {
 
   const handleRunInstance = async (e: React.MouseEvent, inst: TaskInstance) => {
     e.stopPropagation()
-    if (!confirm(`确认执行任务实例 ${inst.instance_no}？`)) return
-    setRunningId(inst.id)
+    setConfirmRun(inst)
+  }
+
+  const doRunInstance = async () => {
+    if (!confirmRun) return
+    setRunningId(confirmRun.id)
+    setConfirmRun(null)
     try {
-      await runTaskInstance(inst.id)
+      await runTaskInstance(confirmRun.id)
       toast.success('任务已加入执行队列')
       fetchInstances()
-      if (selectedInstance?.id === inst.id) handleRowClick(inst.id)
+      if (selectedInstance?.id === confirmRun.id) handleRowClick(confirmRun.id)
     } catch {
       toast.error('执行失败')
     } finally {
       setRunningId(null)
+    }
+  }
+
+  const handleEditInstance = (e: React.MouseEvent, inst: TaskInstance) => {
+    e.stopPropagation()
+    setEditInstance(inst)
+  }
+
+  const handleDeleteInstance = (e: React.MouseEvent, inst: TaskInstance) => {
+    e.stopPropagation()
+    setConfirmDelete(inst)
+  }
+
+  const doDeleteInstance = async () => {
+    if (!confirmDelete) return
+    setDeletingId(confirmDelete.id)
+    setConfirmDelete(null)
+    try {
+      await deleteTaskInstance(confirmDelete.id)
+      toast.success('实例已删除')
+      fetchInstances()
+      if (selectedInstance?.id === confirmDelete.id) setSelectedInstance(null)
+    } catch {
+      toast.error('删除失败')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -98,24 +135,24 @@ export default function TaskInstancePage() {
   }
 
   return (
-    <div className="h-full flex overflow-hidden">
+    <div className="h-full flex overflow-hidden relative">
       {/* Middle: List Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Search Bar */}
-        <div className="p-4 border-b flex items-center gap-3 flex-wrap">
+        <div className="px-8 py-6 border-b flex items-center gap-4 flex-wrap">
           <Input
             placeholder="实例编号搜索..."
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            className="max-w-[200px]"
+            className="w-[240px]"
           />
           <Input
             placeholder="关联模板名称..."
             value={templateName}
             onChange={(e) => setTemplateName(e.target.value)}
-            className="max-w-[200px]"
+            className="w-[240px]"
           />
-          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-[140px]">
+          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-[160px]">
             {STATUS_OPTIONS.map(opt => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
@@ -124,7 +161,7 @@ export default function TaskInstancePage() {
         </div>
 
         {/* Table */}
-        <div className="flex-1 overflow-auto p-4 pt-2">
+        <div className="flex-1 overflow-auto px-8 py-6">
           <Table>
             <TableHeader>
               <TableRow>
@@ -140,7 +177,12 @@ export default function TaskInstancePage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">加载中...</TableCell>
+                  <TableCell colSpan={7} className="text-center py-12">
+                    <div className="flex items-center justify-center gap-2 text-muted-foreground animate-pulse">
+                      <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                      数据加载中...
+                    </div>
+                  </TableCell>
                 </TableRow>
               ) : instances.length === 0 ? (
                 <TableRow>
@@ -160,7 +202,7 @@ export default function TaskInstancePage() {
                     <TableCell>
                       <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
                     </TableCell>
-                    <TableCell>{inst.creator_id}</TableCell>
+                    <TableCell>{inst.creator_name || inst.creator_id}</TableCell>
                     <TableCell>{formatDate(inst.created_at)}</TableCell>
                     <TableCell className="text-center text-sm">
                       {inst.valid_data_count}/{inst.search_result_count}
@@ -179,8 +221,13 @@ export default function TaskInstancePage() {
                           </Button>
                         )}
                         {inst.status === 'pending' && !inst.auto_run && (
-                          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); toast.info('编辑功能开发中') }}>
+                          <Button variant="ghost" size="sm" onClick={(e) => handleEditInstance(e, inst)}>
                             编辑
+                          </Button>
+                        )}
+                        {inst.status === 'pending' && (
+                          <Button variant="ghost" size="sm" className="text-destructive" onClick={(e) => handleDeleteInstance(e, inst)} disabled={deletingId === inst.id}>
+                            {deletingId === inst.id ? '删除中...' : '删除'}
                           </Button>
                         )}
                         {inst.status === 'analyzing_completed' && (
@@ -243,6 +290,34 @@ export default function TaskInstancePage() {
           </>
         )}
       </DetailPanel>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onOpenChange={(o) => { if (!o) setConfirmDelete(null) }}
+        title="确认删除"
+        description={`确认删除任务实例 ${confirmDelete?.instance_no}？删除后不可恢复。`}
+        confirmText="删除"
+        variant="destructive"
+        onConfirm={doDeleteInstance}
+        loading={deletingId !== null}
+      />
+
+      <ConfirmDialog
+        open={!!confirmRun}
+        onOpenChange={(o) => { if (!o) setConfirmRun(null) }}
+        title="确认执行"
+        description={`确认执行任务实例 ${confirmRun?.instance_no}？`}
+        confirmText="执行"
+        onConfirm={doRunInstance}
+        loading={runningId !== null}
+      />
+
+      <EditDialog
+        open={!!editInstance}
+        onOpenChange={(o) => { if (!o) setEditInstance(null) }}
+        instance={editInstance}
+        onSuccess={fetchInstances}
+      />
     </div>
   )
 }

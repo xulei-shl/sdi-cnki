@@ -1,7 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --font-mono: "Geist Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   
   --shadow-sm: 0 1px 2px 0 rgba(28, 25, 23, 0.05);
@@ -103,7 +104,7 @@ button:active, a:active {
 
 /* Elevated table base for readability */
 table {
-  @apply text-sm;
+  @apply tabular-nums;
 }
 th {
   @apply tracking-tight font-medium text-muted-foreground;
@@ -112,4 +113,13 @@ th {
 /* Data numbers */
 .data-number {
   @apply font-mono tabular-nums;
+}
+
+/* Accessibility: Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

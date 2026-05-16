@@ -3,7 +3,7 @@ import { forwardRef, type HTMLAttributes } from 'react'
 
 const Table = forwardRef<HTMLTableElement, HTMLAttributes<HTMLTableElement>>(({ className, ...props }, ref) => (
   <div className="relative w-full overflow-auto">
-    <table ref={ref} className={cn('w-full caption-bottom text-sm', className)} {...props} />
+    <table ref={ref} className={cn('w-full caption-bottom tabular-nums text-base', className)} {...props} />
   </div>
 ))
 Table.displayName = 'Table'
@@ -32,14 +32,14 @@ TableRow.displayName = 'TableRow'
 const TableHead = forwardRef<HTMLTableCellElement, HTMLAttributes<HTMLTableCellElement>>(({ className, ...props }, ref) => (
   <th
     ref={ref}
-    className={cn('h-10 px-2 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0', className)}
+    className={cn('h-10 px-4 text-left align-middle font-medium text-muted-foreground whitespace-nowrap [&:has([role=checkbox])]:pr-0', className)}
     {...props}
   />
 ))
 TableHead.displayName = 'TableHead'
 
 const TableCell = forwardRef<HTMLTableCellElement, HTMLAttributes<HTMLTableCellElement> & { colSpan?: number }>(({ className, ...props }, ref) => (
-  <td ref={ref} className={cn('p-2 align-middle [&:has([role=checkbox])]:pr-0', className)} {...props} />
+  <td ref={ref} className={cn('p-4 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0', className)} {...props} />
 ))
 TableCell.displayName = 'TableCell'
 

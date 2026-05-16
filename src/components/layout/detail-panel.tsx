@@ -9,27 +9,37 @@ interface DetailPanelProps {
   width?: number
 }
 
-export function DetailPanel({ open, title, onClose, children, width = 360 }: DetailPanelProps) {
-  if (!open) return null
-
+export function DetailPanel({ open, title, onClose, children, width = 560 }: DetailPanelProps) {
   return (
-    <div
-      className="border-l bg-background flex flex-col shrink-0 overflow-hidden"
-      style={{ width }}
-    >
-      <div className="h-14 flex items-center justify-between px-4 border-b">
-        <h2 className="text-sm font-medium truncate">{title}</h2>
-        <button
-          onClick={onClose}
-          className="p-1 rounded-md hover:bg-accent transition-colors"
-        >
-          <X className="h-4 w-4" />
-        </button>
+    <>
+      <div
+        className={cn(
+          "absolute inset-0 bg-background/40 backdrop-blur-sm z-40 transition-all duration-300",
+          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        )}
+        onClick={onClose}
+      />
+      <div
+        className={cn(
+          "absolute right-0 top-0 bottom-0 border-l shadow-2xl bg-background flex flex-col shrink-0 overflow-hidden transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] z-50",
+          open ? "translate-x-0" : "translate-x-full"
+        )}
+        style={{ width }}
+      >
+        <div className="h-14 flex items-center justify-between px-4 border-b shrink-0">
+          <h2 className="text-sm font-medium truncate">{title}</h2>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-md hover:bg-accent transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {children}
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {children}
-      </div>
-    </div>
+    </>
   )
 }
 
