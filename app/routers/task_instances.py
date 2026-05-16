@@ -88,7 +88,7 @@ async def list_task_instances(
     stmt = (
         select(TaskInstance)
         .where(*where)
-        .options(selectinload(TaskInstance.meta_task))
+        .options(selectinload(TaskInstance.meta_task), selectinload(TaskInstance.creator))
         .order_by(desc(TaskInstance.created_at))
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -105,6 +105,7 @@ async def list_task_instances(
             "meta_task_name": inst.meta_task.name if inst.meta_task else "",
             "status": inst.status,
             "creator_id": inst.creator_id,
+            "creator_name": inst.creator.username if inst.creator else "",
             "search_result_count": inst.search_result_count,
             "valid_data_count": inst.valid_data_count,
             "duplicate_count": inst.duplicate_count,
@@ -116,6 +117,39 @@ async def list_task_instances(
     return {"items": items, "total": total.scalar(), "page": page, "page_size": page_size}
 
 
+@router.patch("/{instance_id}/params")
+async def update_task_instance_params(
+    instance_id: int,
+    data: dict,
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(TaskInstance).where(TaskInstance.id == instance_id)
+    result = await db.execute(stmt)
+    inst = result.scalar_one_or_none()
+    if not inst:
+        raise NotFoundError("TaskInstance", instance_id)
+    if current_user.role != "admin" and inst.creator_id != current_user.id:
+        from app.utils.exceptions import PermissionDeniedError
+        raise PermissionDeniedError()
+    if inst.status != "pending":
+        raise ValidationError("Only pending instances can be modified")
+
+    search_params = data.get("search_params")
+    if not search_params:
+        raise ValidationError("search_params is required")
+
+    execution_params = json.loads(inst.execution_params) if isinstance(inst.execution_params, str) else inst.execution_params
+    execution_params["search_params"] = search_params
+    inst.execution_params = json.dumps(execution_params, ensure_ascii=False)
+    await db.commit()
+    await db.refresh(inst)
+    return {
+        "id": inst.id,
+        "execution_params": json.loads(inst.execution_params) if inst.execution_params else {},
+    }
+
+
 @router.get("/{instance_id}")
 async def get_task_instance(
     instance_id: int,
@@ -125,7 +159,7 @@ async def get_task_instance(
     stmt = (
         select(TaskInstance)
         .where(TaskInstance.id == instance_id)
-        .options(selectinload(TaskInstance.meta_task))
+        .options(selectinload(TaskInstance.meta_task), selectinload(TaskInstance.creator))
     )
     result = await db.execute(stmt)
     inst = result.unique().scalar_one_or_none()
@@ -141,6 +175,8 @@ async def get_task_instance(
         "instance_no": inst.instance_no,
         "status": inst.status,
         "auto_run": inst.auto_run,
+        "creator_id": inst.creator_id,
+        "creator_name": inst.creator.username if inst.creator else "",
         "execution_params": json.loads(inst.execution_params) if inst.execution_params else {},
         "search_result_file_path": inst.search_result_file_path,
         "search_result_count": inst.search_result_count,
@@ -157,7 +193,7 @@ async def get_task_instance(
 
 
 @router.delete("/{instance_id}")
-async def cancel_instance(
+async def delete_instance(
     instance_id: int,
     current_user = Depends(get_current_user_from_header),
     db: AsyncSession = Depends(get_db),
@@ -170,11 +206,17 @@ async def cancel_instance(
     if current_user.role != "admin" and inst.creator_id != current_user.id:
         from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
-    if inst.status not in ("pending", "running"):
-        raise ValidationError("Can only cancel pending or running instances")
-    inst.status = "cancelled"
+    if inst.status != "pending":
+        raise ValidationError("Only pending instances can be deleted")
+    task_stmt = select(MetaTask).where(MetaTask.id == inst.meta_task_id)
+    task_result = await db.execute(task_stmt)
+    task = task_result.scalar_one_or_none()
+    if task:
+        task.execution_count = max(0, (task.execution_count or 0) - 1)
+    await db.delete(inst)
     await db.commit()
-    return {"message": "Instance cancelled"}
+    await log_operation(db, current_user.id, "delete", "task_instance", instance_id, f"Deleted instance {inst.instance_no}")
+    return {"message": "Instance deleted"}
 
 
 @router.delete("/{instance_id}/clean")

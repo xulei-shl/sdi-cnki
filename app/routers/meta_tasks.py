@@ -88,7 +88,10 @@ async def list_meta_tasks(
     stmt = (
         select(MetaTask)
         .where(*where)
-        .options(selectinload(MetaTask.llm_config_links).selectinload(MetaTaskLlmConfig.llm_config))
+        .options(
+            selectinload(MetaTask.llm_config_links).selectinload(MetaTaskLlmConfig.llm_config),
+            selectinload(MetaTask.creator),
+        )
         .order_by(desc(MetaTask.created_at))
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -112,6 +115,7 @@ async def list_meta_tasks(
             "prompt_template_id": t.prompt_template_id,
             "llm_config_names": llm_names,
             "creator_id": t.creator_id,
+            "creator_name": t.creator.username if t.creator else "",
             "is_active": t.is_active,
             "execution_count": t.execution_count,
             "last_executed_at": t.last_executed_at.isoformat() if t.last_executed_at else None,
@@ -158,7 +162,10 @@ async def get_meta_task(
     stmt = (
         select(MetaTask)
         .where(MetaTask.id == task_id)
-        .options(selectinload(MetaTask.llm_config_links).selectinload(MetaTaskLlmConfig.llm_config))
+        .options(
+            selectinload(MetaTask.llm_config_links).selectinload(MetaTaskLlmConfig.llm_config),
+            selectinload(MetaTask.creator),
+        )
     )
     result = await db.execute(stmt)
     task = result.unique().scalar_one_or_none()
@@ -194,6 +201,7 @@ async def get_meta_task(
         "execution_count": task.execution_count,
         "last_executed_at": task.last_executed_at.isoformat() if task.last_executed_at else None,
         "creator_id": task.creator_id,
+        "creator_name": task.creator.username if task.creator else "",
         "created_at": task.created_at.isoformat() if task.created_at else "",
         "recent_instances": instances,
     }
@@ -259,15 +267,19 @@ async def delete_meta_task(
     )
     if inst_count.scalar() > 0:
         raise ValidationError("Cannot delete meta task with existing instances")
-    task.is_active = False
+    await db.delete(task)
     await db.commit()
-    await log_operation(db, current_user.id, "delete", "meta_task", task_id, f"Soft deleted meta task {task.name}")
+    await log_operation(db, current_user.id, "delete", "meta_task", task_id, f"Deleted meta task {task.name}")
     return {"message": "Meta task deleted"}
 
+
+class ExecuteMetaTaskBody(BaseModel):
+    auto_run: bool = True
 
 @router.post("/{task_id}/execute")
 async def execute_meta_task(
     task_id: int,
+    body: ExecuteMetaTaskBody,
     current_user = Depends(get_current_user_from_header),
     db: AsyncSession = Depends(get_db),
 ):
@@ -279,14 +291,15 @@ async def execute_meta_task(
         from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
     from app.routers.task_instances import _create_instance
-    instance = await _create_instance(db, task, current_user, auto_run=True)
-    from app.task_queue.crud import TaskQueueService
-    svc = TaskQueueService(db)
-    await svc.enqueue(
-        queue_type="cnki",
-        task_type="cnki_search",
-        params_json=json.dumps({"instance_id": instance.id, "instance_no": instance.instance_no}),
-        task_key=instance.instance_no,
-    )
+    instance = await _create_instance(db, task, current_user, auto_run=body.auto_run)
+    if body.auto_run:
+        from app.task_queue.crud import TaskQueueService
+        svc = TaskQueueService(db)
+        await svc.enqueue(
+            queue_type="cnki",
+            task_type="cnki_search",
+            params_json=json.dumps({"instance_id": instance.id, "instance_no": instance.instance_no}),
+            task_key=instance.instance_no,
+        )
     await log_operation(db, current_user.id, "execute", "meta_task", task_id, f"Executed meta task {task.name}")
     return {"instance_id": instance.id, "instance_no": instance.instance_no}

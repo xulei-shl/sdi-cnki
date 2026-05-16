@@ -26,3 +26,7 @@ export function deleteTaskInstance(id: number) {
 export function runTaskInstance(id: number) {
   return http.post(`/task-instances/${id}/run`)
 }
+
+export function updateTaskInstanceParams(id: number, searchParams: Record<string, any>) {
+  return http.patch(`/task-instances/${id}/params`, { search_params: searchParams })
+}
