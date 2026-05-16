@@ -16,3 +16,11 @@ export function updateLlmConfig(id: number, data: Partial<LlmConfig>) {
 export function deleteLlmConfig(id: number) {
   return http.delete(`/llm-configs/${id}`)
 }
+
+export function testLlmConfig(data: { model_name: string; api_endpoint: string; api_key: string }) {
+  return http.post('/llm-configs/test', data)
+}
+
+export function testLlmConfigById(id: number) {
+  return http.post(`/llm-configs/${id}/test`)
+}

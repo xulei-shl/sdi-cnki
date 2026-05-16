@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { getLlmConfigs, createLlmConfig, updateLlmConfig, deleteLlmConfig } from '@/api/llm-configs'
+import { getLlmConfigs, createLlmConfig, updateLlmConfig, deleteLlmConfig, testLlmConfig, testLlmConfigById } from '@/api/llm-configs'
 import type { LlmConfig } from '@/types'
 
 export default function LlmConfigPage() {
@@ -16,6 +16,8 @@ export default function LlmConfigPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editItem, setEditItem] = useState<LlmConfig | null>(null)
   const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testingId, setTestingId] = useState<number | null>(null)
 
   const [name, setName] = useState('')
   const [modelName, setModelName] = useState('')
@@ -95,6 +97,41 @@ export default function LlmConfigPage() {
     }
   }
 
+  const handleTestDialog = async () => {
+    if (!apiEndpoint.trim()) { toast.error('请输入 API 端点'); return }
+    if (!modelName.trim()) { toast.error('请输入模型名称'); return }
+    setTesting(true)
+    try {
+      if (editItem) {
+        await testLlmConfigById(editItem.id)
+      } else {
+        if (!apiKey.trim()) { toast.error('请输入 API Key'); setTesting(false); return }
+        await testLlmConfig({
+          model_name: modelName.trim(),
+          api_endpoint: apiEndpoint.trim(),
+          api_key: apiKey,
+        })
+      }
+      toast.success('连接成功')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || '连接测试失败')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const handleTestById = async (id: number) => {
+    setTestingId(id)
+    try {
+      await testLlmConfigById(id)
+      toast.success('连接成功')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || '连接测试失败')
+    } finally {
+      setTestingId(null)
+    }
+  }
+
   return (
     <div className="p-6 h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
@@ -131,10 +168,11 @@ export default function LlmConfigPage() {
                 </TableCell>
                 <TableCell>{cfg.created_at?.slice(0, 16).replace('T', ' ') || '-'}</TableCell>
                 <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(cfg)}>编辑</Button>
-                    <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(cfg.id)}>删除</Button>
-                  </div>
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => handleTestById(cfg.id)} disabled={testingId === cfg.id}>{testingId === cfg.id ? '测试中' : '测试'}</Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(cfg)}>编辑</Button>
+                      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDelete(cfg.id)}>删除</Button>
+                    </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -171,6 +209,7 @@ export default function LlmConfigPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={handleTestDialog} disabled={testing}>{testing ? '测试中...' : '测试连接'}</Button>
             <Button onClick={handleSave} disabled={saving}>{saving ? '保存中...' : '保存'}</Button>
           </DialogFooter>
         </DialogContent>

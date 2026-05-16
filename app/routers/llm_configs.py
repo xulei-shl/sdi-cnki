@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +13,7 @@ from app.utils.exceptions import NotFoundError, ValidationError
 from app.utils.crypto import encrypt_api_key, decrypt_api_key, mask_api_key
 from app.config import get_settings
 from app.routers import get_current_user_from_header, require_admin_user
+from app.services.llm_provider import call_llm_once
 
 router = APIRouter()
 settings = get_settings()
@@ -32,6 +33,12 @@ class LlmConfigUpdate(BaseModel):
     api_key: Optional[str] = None
     api_endpoint: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+class LlmConfigTest(BaseModel):
+    model_name: str
+    api_endpoint: str
+    api_key: str
 
 
 @router.get("")
@@ -126,3 +133,46 @@ async def delete_llm_config(
     await db.delete(config)
     await db.commit()
     return {"message": "LLM config deleted"}
+
+
+@router.post("/test")
+async def test_llm_config(
+    data: LlmConfigTest,
+    admin = Depends(require_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        content = await call_llm_once(
+            api_key=data.api_key,
+            api_endpoint=data.api_endpoint,
+            model_name=data.model_name,
+            messages=[{"role": "user", "content": "Say 'Hello' in one word."}],
+            timeout=30,
+        )
+        return {"message": "连接成功", "response": content[:200]}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"连接失败: {str(e)[:200]}")
+
+
+@router.post("/{config_id}/test")
+async def test_llm_config_by_id(
+    config_id: int,
+    admin = Depends(require_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(LlmConfig).where(LlmConfig.id == config_id))
+    config = result.scalar_one_or_none()
+    if not config:
+        raise NotFoundError("LLM Config", config_id)
+    api_key = decrypt_api_key(config.api_key_encrypted, settings.aes_encryption_key)
+    try:
+        content = await call_llm_once(
+            api_key=api_key,
+            api_endpoint=config.api_endpoint,
+            model_name=config.model_name,
+            messages=[{"role": "user", "content": "Say 'Hello' in one word."}],
+            timeout=30,
+        )
+        return {"message": "连接成功", "response": content[:200]}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"连接失败: {str(e)[:200]}")
