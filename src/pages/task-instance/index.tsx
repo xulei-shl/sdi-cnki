@@ -13,6 +13,11 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EditDialog } from './edit-dialog'
 import type { TaskInstance, TaskStatus } from '@/types'
 
+const DATE_RANGE_LABELS: Record<string, string> = {
+  week: '最近一周', month: '最近一月', 'half-year': '最近半年',
+  year: '最近一年', ytd: '今年迄今', 'last-year': '上一年度',
+}
+
 const STATUS_MAP: Record<TaskStatus, { label: string; variant: 'info' | 'warning' | 'success' | 'destructive' | 'secondary' | 'default' }> = {
   pending: { label: '待执行', variant: 'secondary' },
   running: { label: '检索中', variant: 'info' },
@@ -104,10 +109,15 @@ export default function TaskInstancePage() {
     }
   }
 
-  const handleEditInstance = (e: React.MouseEvent, inst: TaskInstance) => {
+  const handleEditInstance = async (e: React.MouseEvent, inst: TaskInstance) => {
     e.stopPropagation()
-    setEditInstance(inst)
-    setEditDialogOpen(true)
+    try {
+      const res = await getTaskInstance(inst.id)
+      setEditInstance(res.data)
+      setEditDialogOpen(true)
+    } catch {
+      toast.error('获取实例详情失败')
+    }
   }
 
   const handleDeleteInstance = (e: React.MouseEvent, inst: TaskInstance) => {
@@ -267,6 +277,17 @@ export default function TaskInstancePage() {
                 </Badge>
               </DetailRow>
               <DetailRow label="执行模式">{selectedInstance.auto_run ? '直接运行' : '手动确认'}</DetailRow>
+            </DetailSection>
+
+            <DetailSection label="检索参数">
+              <DetailRow label="检索词">{(selectedInstance as any).execution_params?.search_params?.query || '-'}</DetailRow>
+              <DetailRow label="起始年份">{(selectedInstance as any).execution_params?.search_params?.year_from ?? '-'}</DetailRow>
+              <DetailRow label="结束年份">{(selectedInstance as any).execution_params?.search_params?.year_to ?? '-'}</DetailRow>
+              <DetailRow label="更新时间范围">{DATE_RANGE_LABELS[(selectedInstance as any).execution_params?.search_params?.date_range as string] || '-'}</DetailRow>
+              <DetailRow label="核心期刊">{(selectedInstance as any).execution_params?.search_params?.core_only ? '是' : '否'}</DetailRow>
+              <DetailRow label="同义词扩展">{(selectedInstance as any).execution_params?.search_params?.synonym_extend ? '是' : '否'}</DetailRow>
+              <DetailRow label="包含无全文">{(selectedInstance as any).execution_params?.search_params?.include_no_fulltext ? '是' : '否'}</DetailRow>
+              <DetailRow label="导出上限">{(selectedInstance as any).execution_params?.search_params?.max_export ?? '-'}</DetailRow>
             </DetailSection>
 
             <DetailSection label="阶段时间">

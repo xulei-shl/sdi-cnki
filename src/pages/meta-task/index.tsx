@@ -14,6 +14,11 @@ import { ExecuteDialog } from './execute-dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { MetaTask, LlmConfig, SystemPrompt } from '@/types'
 
+const DATE_RANGE_LABELS: Record<string, string> = {
+  week: '最近一周', month: '最近一月', 'half-year': '最近半年',
+  year: '最近一年', ytd: '今年迄今', 'last-year': '上一年度',
+}
+
 export default function MetaTaskPage() {
   const [tasks, setTasks] = useState<MetaTask[]>([])
   const [total, setTotal] = useState(0)
@@ -162,18 +167,18 @@ export default function MetaTaskPage() {
 
         {/* Table */}
         <div className="flex-1 overflow-auto px-8 py-6">
-          <Table>
+          <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead>任务名称</TableHead>
+                <TableHead className="w-[180px]">任务名称</TableHead>
                 <TableHead>描述</TableHead>
-                <TableHead>LLM 配置</TableHead>
-                <TableHead>创建者</TableHead>
-                <TableHead>创建时间</TableHead>
-                <TableHead className="text-center">执行次数</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>最后执行</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+                <TableHead className="w-[130px]">LLM 配置</TableHead>
+                <TableHead className="w-[72px]">创建者</TableHead>
+                <TableHead className="w-[120px]">创建时间</TableHead>
+                <TableHead className="w-[80px] text-center">执行次数</TableHead>
+                <TableHead className="w-[80px]">状态</TableHead>
+                <TableHead className="w-[120px]">最后执行</TableHead>
+                <TableHead className="w-[140px] text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -197,8 +202,8 @@ export default function MetaTaskPage() {
                   onClick={() => handleRowClick(task.id)}
                   data-state={selectedTask?.id === task.id ? 'selected' : undefined}
                 >
-                  <TableCell className="font-medium max-w-[200px] truncate">{task.name}</TableCell>
-                  <TableCell className="max-w-[200px] truncate text-muted-foreground">{task.description || '-'}</TableCell>
+                  <TableCell className="font-medium truncate">{task.name}</TableCell>
+                  <TableCell className="truncate text-muted-foreground">{task.description || '-'}</TableCell>
                   <TableCell>
                     <div className="flex gap-1 flex-wrap">
                       {task.llm_configs?.map((c) => (
@@ -252,11 +257,13 @@ export default function MetaTaskPage() {
 
             <DetailSection label="检索参数">
               <DetailRow label="检索词">{(selectedTask as any).search_params?.query || '-'}</DetailRow>
-              <DetailRow label="年份范围">
-                {(selectedTask as any).search_params?.year_from || '-'} ~ {(selectedTask as any).search_params?.year_to || '-'}
-              </DetailRow>
+              <DetailRow label="起始年份">{(selectedTask as any).search_params?.year_from ?? '-'}</DetailRow>
+              <DetailRow label="结束年份">{(selectedTask as any).search_params?.year_to ?? '-'}</DetailRow>
+              <DetailRow label="更新时间范围">{DATE_RANGE_LABELS[(selectedTask as any).search_params?.date_range as string] || '-'}</DetailRow>
               <DetailRow label="核心期刊">{(selectedTask as any).search_params?.core_only ? '是' : '否'}</DetailRow>
-              <DetailRow label="导出上限">{(selectedTask as any).search_params?.max_export || '-'}</DetailRow>
+              <DetailRow label="同义词扩展">{(selectedTask as any).search_params?.synonym_extend ? '是' : '否'}</DetailRow>
+              <DetailRow label="包含无全文">{(selectedTask as any).search_params?.include_no_fulltext ? '是' : '否'}</DetailRow>
+              <DetailRow label="导出上限">{(selectedTask as any).search_params?.max_export ?? '-'}</DetailRow>
             </DetailSection>
 
             <DetailSection label="LLM 分析配置">
@@ -267,6 +274,7 @@ export default function MetaTaskPage() {
               ) : (
                 <div className="text-sm text-muted-foreground">无配置</div>
               )}
+              <DetailRow label="提示词模板">{selectedTask.prompt_template_name || '未选择'}</DetailRow>
             </DetailSection>
 
             <DetailSection label="执行历史">
