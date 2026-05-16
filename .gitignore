@@ -92,5 +92,5 @@ temp/
 
 .config/
 .codex/
-.claude/
+# .claude/
 .agent/
