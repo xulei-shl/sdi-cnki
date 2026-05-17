@@ -253,6 +253,7 @@ async def list_instance_results(
     include_duplicate: bool = Query(False),
     review_status: Optional[str] = Query(None),
     analysis_status: Optional[str] = Query(None),
+    analysis_result: Optional[str] = Query(None),
     keyword: Optional[str] = Query(None),
     publish_year: Optional[int] = Query(None),
     min_score: Optional[int] = Query(None, ge=0, le=10),
@@ -309,6 +310,12 @@ async def list_instance_results(
             score = parsed.get("relevance_score")
         if min_score is not None and (score is None or score < min_score):
             continue
+        if analysis_result == "passed":
+            if parsed is None or not parsed.get("is_target_topic"):
+                continue
+        elif analysis_result == "rejected":
+            if parsed is None or parsed.get("is_target_topic") is not False:
+                continue
         items.append({
             "id": row.id,
             "title": row.title,

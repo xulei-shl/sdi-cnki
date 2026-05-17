@@ -14,6 +14,7 @@ import { getTaskInstance } from '@/api/task-instances'
 import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
 import { Check } from 'lucide-react'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { TaskInstance, TaskStatus } from '@/types'
 
 const STEP_CONFIG: { label: string; match: TaskStatus[] }[] = [
@@ -72,19 +73,26 @@ const DOWNLOAD_BADGE: Record<string, { label: string; variant: 'success' | 'dest
   skipped: { label: '跳过', variant: 'warning' },
 }
 
+const ANALYSIS_FILTER_OPTIONS = [
+  { label: '分析状态', value: '' },
+  { label: '已完成', value: 'completed' },
+  { label: '未分析', value: 'pending' },
+  { label: '失败', value: 'failed' },
+]
+
+const ANALYSIS_RESULT_OPTIONS = [
+  { label: '分析结论', value: '' },
+  { label: '通过', value: 'passed' },
+  { label: '拒绝', value: 'rejected' },
+]
+
 const REVIEW_OPTIONS = [
-  { label: '全部', value: '' },
+  { label: '审核结论', value: '' },
   { label: '待审核', value: 'pending' },
   { label: '已通过', value: 'passed' },
   { label: '已拒绝', value: 'rejected' },
 ]
 
-const ANALYSIS_FILTER_OPTIONS = [
-  { label: '全部', value: '' },
-  { label: '已完成', value: 'completed' },
-  { label: '未分析', value: 'pending' },
-  { label: '失败', value: 'failed' },
-]
 
 export default function TaskResultPage() {
   const { id } = useParams<{ id: string }>()
@@ -106,6 +114,7 @@ export default function TaskResultPage() {
   // Filters
   const [reviewStatus, setReviewStatus] = useState('')
   const [analysisStatus, setAnalysisStatus] = useState('')
+  const [analysisResult, setAnalysisResult] = useState('')
   const [keyword, setKeyword] = useState('')
   const [publishYear, setPublishYear] = useState('')
   const [minScore, setMinScore] = useState('')
@@ -113,6 +122,7 @@ export default function TaskResultPage() {
 
   const [exporting, setExporting] = useState(false)
   const [retrying, setRetrying] = useState(false)
+  const [confirmAction, setConfirmAction] = useState<{ type: string; count?: number } | null>(null)
   const sseRef = useRef<SseClient | null>(null)
   const getAuthToken = () => localStorage.getItem('access_token') || ''
 
@@ -129,6 +139,7 @@ export default function TaskResultPage() {
       const params: any = { page, page_size: 20 }
       if (reviewStatus) params.review_status = reviewStatus
       if (analysisStatus) params.analysis_status = analysisStatus
+      if (analysisResult) params.analysis_result = analysisResult
       if (keyword) params.keyword = keyword
       if (publishYear) params.publish_year = parseInt(publishYear)
       if (minScore) params.min_score = parseInt(minScore)
@@ -139,7 +150,7 @@ export default function TaskResultPage() {
     } finally {
       setLoading(false)
     }
-  }, [instanceId, page, reviewStatus, analysisStatus, keyword, publishYear, minScore, includeDuplicate])
+  }, [instanceId, page, reviewStatus, analysisStatus, analysisResult, keyword, publishYear, minScore, includeDuplicate])
 
   useEffect(() => { fetchInstance(); fetchResults() }, [fetchInstance, fetchResults])
 
@@ -210,92 +221,121 @@ export default function TaskResultPage() {
   const handleSinglePass = async (row: any) => {
     try {
       await markPass(row.id)
-      row.is_passed = row.is_passed === true ? null : true
-      toast.success(row.is_passed ? '已通过' : '已取消')
+      toast.success('已通过')
+      fetchResults()
     } catch { toast.error('操作失败') }
   }
 
   const handleSingleReject = async (row: any) => {
     try {
       await markReject(row.id)
-      row.is_passed = row.is_passed === false ? null : false
-      toast.success(row.is_passed === false ? '已拒绝' : '已取消')
+      toast.success('已拒绝')
+      fetchResults()
     } catch { toast.error('操作失败') }
   }
 
-  const handleBatchPass = async () => {
+  const handleBatchPass = () => {
     const ids = results.filter(r => selectedIds.has(r.id) && r.is_passed !== true).map(r => r.id)
     if (!ids.length) { toast.info('已全部通过'); return }
-    try {
-      await batchUpdateResults(instanceId, { result_ids: ids, action: 'pass' })
-      toast.success(`已通过 ${ids.length} 条`)
-      fetchResults()
-    } catch { toast.error('批量操作失败') }
+    setConfirmAction({ type: 'batch-pass', count: ids.length })
   }
 
-  const handleBatchReject = async () => {
+  const handleBatchReject = () => {
     const ids = results.filter(r => selectedIds.has(r.id) && r.is_passed !== false).map(r => r.id)
     if (!ids.length) { toast.info('已全部拒绝'); return }
-    if (!confirm('确认批量拒绝所选结果？')) return
-    try {
-      await batchUpdateResults(instanceId, { result_ids: ids, action: 'reject' })
-      toast.success(`已拒绝 ${ids.length} 条`)
-      fetchResults()
-    } catch { toast.error('批量操作失败') }
+    setConfirmAction({ type: 'batch-reject', count: ids.length })
   }
 
-  const handleDownload = async () => {
-    try {
-      await startDownload(instanceId)
-      toast.success('下载任务已加入队列')
-    } catch { toast.error('启动下载失败') }
+  const handleDownload = () => {
+    setConfirmAction({ type: 'download' })
   }
 
-  const handleRetryAnalysis = async () => {
+  const handleRetryAnalysis = () => {
     if (retrying) return
-    setRetrying(true)
-    setAnalyzeProgress({ active: true, analyzed: 0, total: 0, failed: 0 })
-    try {
-      await retryAnalysis(instanceId)
-      toast.success('LLM 分析任务已加入队列')
-      fetchInstance()
-    } catch {
-      toast.error('启动 LLM 分析失败')
-      setAnalyzeProgress({ active: false, analyzed: 0, total: 0, failed: 0 })
-      setRetrying(false)
-    }
+    setConfirmAction({ type: 'retry-analysis' })
   }
 
-  const handleExport = async () => {
+  const handleExport = () => {
     if (exporting) return
-    setExporting(true)
-    try {
-      const res = await startExport(instanceId)
-      const exportId = res.data.export_id
-      toast.success('导出任务已加入队列')
+    setConfirmAction({ type: 'export' })
+  }
 
-      const poll = async () => {
-        try {
-          const sr = await getExportStatus(exportId)
-          if (sr.data.status === 'completed') {
-            setExporting(false)
-            window.open(`/api/v1/exports/${exportId}/download`, '_blank')
-            toast.success('导出完成')
-          } else if (sr.data.status === 'failed') {
-            setExporting(false)
-            toast.error(`导出失败: ${sr.data.error_message || ''}`)
-          } else {
-            setTimeout(poll, 3000)
+  const doConfirm = async () => {
+    if (!confirmAction) return
+    const { type, count } = confirmAction
+    setConfirmAction(null)
+    const pendingIds = (filterFn: (r: any) => boolean) =>
+      results.filter(r => selectedIds.has(r.id) && filterFn(r)).map(r => r.id)
+
+    try {
+      switch (type) {
+        case 'batch-pass': {
+          const ids = pendingIds(r => r.is_passed !== true)
+          await batchUpdateResults(instanceId, { result_ids: ids, action: 'pass' })
+          toast.success(`已通过 ${ids.length} 条`)
+          fetchResults()
+          break
+        }
+        case 'batch-reject': {
+          const ids = pendingIds(r => r.is_passed !== false)
+          await batchUpdateResults(instanceId, { result_ids: ids, action: 'reject' })
+          toast.success(`已拒绝 ${ids.length} 条`)
+          fetchResults()
+          break
+        }
+        case 'download': {
+          await startDownload(instanceId)
+          toast.success('下载任务已加入队列')
+          break
+        }
+        case 'retry-analysis': {
+          setRetrying(true)
+          setAnalyzeProgress({ active: true, analyzed: 0, total: 0, failed: 0 })
+          try {
+            await retryAnalysis(instanceId)
+            toast.success('LLM 分析任务已加入队列')
+            fetchInstance()
+          } catch {
+            toast.error('启动 LLM 分析失败')
+            setAnalyzeProgress({ active: false, analyzed: 0, total: 0, failed: 0 })
+            setRetrying(false)
           }
-        } catch {
-          setExporting(false)
-          toast.error('查询导出状态失败')
+          break
+        }
+        case 'export': {
+          setExporting(true)
+          try {
+            const res = await startExport(instanceId)
+            const exportId = res.data.export_id
+            toast.success('导出任务已加入队列')
+            const poll = async () => {
+              try {
+                const sr = await getExportStatus(exportId)
+                if (sr.data.status === 'completed') {
+                  setExporting(false)
+                  window.open(`/api/v1/exports/${exportId}/download`, '_blank')
+                  toast.success('导出完成')
+                } else if (sr.data.status === 'failed') {
+                  setExporting(false)
+                  toast.error(`导出失败: ${sr.data.error_message || ''}`)
+                } else {
+                  setTimeout(poll, 3000)
+                }
+              } catch {
+                setExporting(false)
+                toast.error('查询导出状态失败')
+              }
+            }
+            setTimeout(poll, 3000)
+          } catch {
+            setExporting(false)
+            toast.error('启动导出失败')
+          }
+          break
         }
       }
-      setTimeout(poll, 3000)
     } catch {
-      setExporting(false)
-      toast.error('启动导出失败')
+      toast.error('操作失败')
     }
   }
 
@@ -371,21 +411,24 @@ export default function TaskResultPage() {
           <div className="px-8 py-5 border-b flex items-center justify-between flex-wrap gap-6 shrink-0">
             {/* Filters */}
             <div className="flex items-center gap-3 flex-wrap">
-              <Select value={reviewStatus} onChange={(e) => { setReviewStatus(e.target.value); setPage(1) }} className="w-[120px]">
-                {REVIEW_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </Select>
               <Select value={analysisStatus} onChange={(e) => { setAnalysisStatus(e.target.value); setPage(1) }} className="w-[120px]">
                 {ANALYSIS_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </Select>
-              <Input placeholder="题名关键词" value={keyword} onChange={(e) => { setKeyword(e.target.value); setPage(1) }} className="w-[150px]" />
-              <Input placeholder="年份" value={publishYear} onChange={(e) => { setPublishYear(e.target.value); setPage(1) }} className="w-[80px]" />
+              <Select value={analysisResult} onChange={(e) => { setAnalysisResult(e.target.value); setPage(1) }} className="w-[120px]">
+                {ANALYSIS_RESULT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
               <Select value={minScore} onChange={(e) => { setMinScore(e.target.value); setPage(1) }} className="w-[100px]">
-                <option value="">评分不限</option>
+                <option value="">分析评分</option>
                 <option value="4">≥4</option>
                 <option value="6">≥6</option>
                 <option value="8">≥8</option>
                 <option value="9">≥9</option>
               </Select>
+              <Select value={reviewStatus} onChange={(e) => { setReviewStatus(e.target.value); setPage(1) }} className="w-[120px]">
+                {REVIEW_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+              <Input placeholder="题名关键词" value={keyword} onChange={(e) => { setKeyword(e.target.value); setPage(1) }} className="w-[150px]" />
+              <Input placeholder="年份" value={publishYear} onChange={(e) => { setPublishYear(e.target.value); setPage(1) }} className="w-[80px]" />
               <label className="flex items-center gap-1 text-sm bg-accent/50 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/80 transition-colors">
                 <Checkbox checked={includeDuplicate} onChange={(e) => { setIncludeDuplicate(e.target.checked); setPage(1) }} />
                 <span className="ml-1">含重复</span>
@@ -408,7 +451,7 @@ export default function TaskResultPage() {
                 </Button>
               )}
               {['analyzing_completed', 'ready_for_download', 'downloading'].includes(instance?.status || '') && (
-                <Button size="sm" variant="outline" onClick={handleDownload}>开始下载</Button>
+                <Button size="sm" variant="outline" onClick={handleDownload}>PDF 下载</Button>
               )}
             </div>
           </div>
@@ -479,12 +522,8 @@ export default function TaskResultPage() {
                       </TableCell>
                       <TableCell onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                         <div className="flex justify-end gap-3">
-                          <Button variant="link" className="h-auto p-0 font-normal" onClick={() => handleSinglePass(row)}>
-                            {row.is_passed === true ? '取消' : '通过'}
-                          </Button>
-                          <Button variant="link" className={`h-auto p-0 font-normal ${row.is_passed === false ? '' : 'text-destructive hover:text-destructive/80'}`} onClick={() => handleSingleReject(row)}>
-                            {row.is_passed === false ? '取消' : '拒绝'}
-                          </Button>
+                          <Button variant="link" className="h-auto p-0 font-normal" onClick={() => handleSinglePass(row)}>通过</Button>
+                          <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={() => handleSingleReject(row)}>拒绝</Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -569,6 +608,28 @@ export default function TaskResultPage() {
           )}
         </DetailPanel>
       </div>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onOpenChange={(o) => { if (!o) setConfirmAction(null) }}
+        title={
+          confirmAction?.type === 'batch-pass' ? '批量通过' :
+          confirmAction?.type === 'batch-reject' ? '批量拒绝' :
+          confirmAction?.type === 'export' ? '导出确认' :
+          confirmAction?.type === 'retry-analysis' ? 'LLM 分析确认' :
+          '下载确认'
+        }
+        description={
+          confirmAction?.type === 'batch-pass' ? `确认批量通过选中的 ${confirmAction.count} 项结果？` :
+          confirmAction?.type === 'batch-reject' ? `确认批量拒绝选中的 ${confirmAction.count} 项结果？` :
+          confirmAction?.type === 'export' ? '确认导出当前任务的所有搜索结果？此操作将导出数据为 Excel 文件。' :
+          confirmAction?.type === 'retry-analysis' ? '确认重新运行 LLM 分析？此操作将重新分析所有搜索结果。' :
+          '确认下载所有结果的 PDF 文件？'
+        }
+        variant={confirmAction?.type === 'batch-reject' ? 'destructive' : 'default'}
+        confirmText="确认"
+        onConfirm={doConfirm}
+      />
     </div>
   )
 }
