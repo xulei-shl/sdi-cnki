@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 import { getTaskInstance } from '@/api/task-instances'
 import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis, downloadExportFile } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
-import { Check } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { TaskInstance, TaskStatus } from '@/types'
 
@@ -105,6 +105,7 @@ export default function TaskResultPage() {
   const [loading, setLoading] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [activeResult, setActiveResult] = useState<any>(null)
+  const [activeIndex, setActiveIndex] = useState(0)
   const [showDetail, setShowDetail] = useState(false)
 
   // SSE progress state
@@ -236,6 +237,42 @@ export default function TaskResultPage() {
     } catch { toast.error('操作失败') }
   }
 
+  const goToPrev = () => {
+    if (activeIndex <= 0) return
+    const newIdx = activeIndex - 1
+    setActiveIndex(newIdx)
+    setActiveResult(results[newIdx])
+  }
+
+  const goToNext = () => {
+    if (activeIndex >= results.length - 1) return
+    const newIdx = activeIndex + 1
+    setActiveIndex(newIdx)
+    setActiveResult(results[newIdx])
+  }
+
+  const handleDetailPass = async () => {
+    if (!activeResult) return
+    try {
+      await markPass(activeResult.id)
+      toast.success('已通过')
+      setResults(prev => prev.map(r => r.id === activeResult.id ? { ...r, is_passed: true } : r))
+      setActiveResult((prev: any) => prev ? { ...prev, is_passed: true } : prev)
+      goToNext()
+    } catch { toast.error('操作失败') }
+  }
+
+  const handleDetailReject = async () => {
+    if (!activeResult) return
+    try {
+      await markReject(activeResult.id)
+      toast.success('已拒绝')
+      setResults(prev => prev.map(r => r.id === activeResult.id ? { ...r, is_passed: false } : r))
+      setActiveResult((prev: any) => prev ? { ...prev, is_passed: false } : prev)
+      goToNext()
+    } catch { toast.error('操作失败') }
+  }
+
   const handleBatchPass = () => {
     const ids = results.filter(r => selectedIds.has(r.id) && r.is_passed !== true).map(r => r.id)
     if (!ids.length) { toast.info('已全部通过'); return }
@@ -343,6 +380,8 @@ export default function TaskResultPage() {
   }
 
   const viewDetail = (row: any) => {
+    const idx = results.findIndex(r => r.id === row.id)
+    setActiveIndex(idx >= 0 ? idx : 0)
     setActiveResult(row)
     setShowDetail(true)
   }
@@ -544,16 +583,59 @@ export default function TaskResultPage() {
           title={activeResult?.title || ''}
           onClose={() => { setShowDetail(false); setActiveResult(null) }}
           width={640}
+          headerActions={
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={handleDetailPass}
+                disabled={!activeResult || activeResult.is_passed === true}
+                className="text-xs font-medium text-green-600 hover:text-green-700 transition-colors px-2 py-1 rounded-md hover:bg-green-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                通过
+              </button>
+              <button
+                onClick={handleDetailReject}
+                disabled={!activeResult || activeResult.is_passed === false}
+                className="text-xs font-medium text-destructive hover:text-destructive/80 transition-colors px-2 py-1 rounded-md hover:bg-destructive/5 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                拒绝
+              </button>
+              <div className="w-px h-4 bg-border mx-0.5" />
+              <button
+                onClick={goToPrev}
+                disabled={activeIndex <= 0}
+                className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                title="上一条"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                onClick={goToNext}
+                disabled={activeIndex >= results.length - 1}
+                className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                title="下一条"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+              {results.length > 0 && (
+                <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap min-w-[3.5rem] text-center">
+                  {activeIndex + 1}/{results.length}
+                </span>
+              )}
+            </div>
+          }
         >
           {activeResult && (
             <>
               <DetailSection label="文献信息">
                 <DetailRow label="题名" layout="vertical">{activeResult.title}</DetailRow>
+                <DetailRow label="摘要" layout="vertical">
+                  {activeResult.abstract || '-'}
+                </DetailRow>
+                <DetailRow label="关键词" layout="vertical">{activeResult.keywords || '-'}</DetailRow>
                 <DetailRow label="作者" valueAlign="left">{activeResult.authors || '-'}</DetailRow>
                 <DetailRow label="期刊" valueAlign="left">{activeResult.source_journal || '-'}</DetailRow>
                 <DetailRow label="出版年" valueAlign="left">{activeResult.publish_year ?? '-'}</DetailRow>
                 <DetailRow label="作者单位" layout="vertical">{activeResult.organ || '-'}</DetailRow>
-                <DetailRow label="关键词" layout="vertical">{activeResult.keywords || '-'}</DetailRow>
                 <DetailRow label="基金" layout="vertical">{activeResult.fund || '-'}</DetailRow>
                 <DetailRow label="原文链接" valueAlign="left">
                   {activeResult.original_url ? (
@@ -561,9 +643,6 @@ export default function TaskResultPage() {
                       {activeResult.original_url}
                     </a>
                   ) : '-'}
-                </DetailRow>
-                <DetailRow label="摘要" layout="vertical">
-                  {activeResult.abstract || '-'}
                 </DetailRow>
               </DetailSection>
 
@@ -617,17 +696,17 @@ export default function TaskResultPage() {
         onOpenChange={(o) => { if (!o) setConfirmAction(null) }}
         title={
           confirmAction?.type === 'batch-pass' ? '批量通过' :
-          confirmAction?.type === 'batch-reject' ? '批量拒绝' :
-          confirmAction?.type === 'export' ? '导出确认' :
-          confirmAction?.type === 'retry-analysis' ? 'LLM 分析确认' :
-          '下载确认'
+            confirmAction?.type === 'batch-reject' ? '批量拒绝' :
+              confirmAction?.type === 'export' ? '导出确认' :
+                confirmAction?.type === 'retry-analysis' ? 'LLM 分析确认' :
+                  '下载确认'
         }
         description={
           confirmAction?.type === 'batch-pass' ? `确认批量通过选中的 ${confirmAction.count} 项结果？` :
-          confirmAction?.type === 'batch-reject' ? `确认批量拒绝选中的 ${confirmAction.count} 项结果？` :
-          confirmAction?.type === 'export' ? '确认导出当前任务的所有搜索结果？此操作将导出数据为 Excel 文件。' :
-          confirmAction?.type === 'retry-analysis' ? '确认重新运行 LLM 分析？此操作将重新分析所有搜索结果。' :
-          '确认下载所有结果的 PDF 文件？'
+            confirmAction?.type === 'batch-reject' ? `确认批量拒绝选中的 ${confirmAction.count} 项结果？` :
+              confirmAction?.type === 'export' ? '确认导出当前任务的所有搜索结果？此操作将导出数据为 Excel 文件。' :
+                confirmAction?.type === 'retry-analysis' ? '确认重新运行 LLM 分析？此操作将重新分析所有搜索结果。' :
+                  '确认下载所有结果的 PDF 文件？'
         }
         variant={confirmAction?.type === 'batch-reject' ? 'destructive' : 'default'}
         confirmText="确认"

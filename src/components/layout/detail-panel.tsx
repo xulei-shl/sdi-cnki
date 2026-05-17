@@ -7,9 +7,10 @@ interface DetailPanelProps {
   onClose: () => void
   children: React.ReactNode
   width?: number
+  headerActions?: React.ReactNode
 }
 
-export function DetailPanel({ open, title, onClose, children, width = 600 }: DetailPanelProps) {
+export function DetailPanel({ open, title, onClose, children, width = 600, headerActions }: DetailPanelProps) {
   return (
     <>
       <div
@@ -28,12 +29,15 @@ export function DetailPanel({ open, title, onClose, children, width = 600 }: Det
       >
         <div className="h-16 flex items-center justify-between px-6 border-b shrink-0 bg-muted/30">
           <h2 className="text-base font-semibold tracking-tight text-foreground truncate">{title}</h2>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {headerActions}
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8">
           {children}
