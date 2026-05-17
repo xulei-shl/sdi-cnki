@@ -9,6 +9,7 @@ export interface TaskResultQuery {
   year?: number
   min_score?: number
   include_duplicate?: boolean
+  download_status?: string
   keyword?: string
   page?: number
   page_size?: number

@@ -7,7 +7,7 @@ from app.utils import timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -331,6 +331,7 @@ async def list_instance_results(
     keyword: Optional[str] = Query(None),
     publish_year: Optional[int] = Query(None),
     min_score: Optional[int] = Query(None, ge=0, le=10),
+    download_status: Optional[str] = Query(None),
     current_user = Depends(get_current_user_from_header),
     db: AsyncSession = Depends(get_db),
 ):
@@ -362,6 +363,26 @@ async def list_instance_results(
         where.append(TaskResult.title.ilike(f"%{keyword}%"))
     if publish_year:
         where.append(TaskResult.publish_year == publish_year)
+    if download_status:
+        from app.models.download_result import DownloadResult
+        if download_status == "pending":
+            has_dr = select(DownloadResult.task_result_id).where(
+                DownloadResult.task_instance_id == instance_id,
+            ).subquery()
+            dr_pending = select(DownloadResult.task_result_id).where(
+                DownloadResult.download_status == "pending",
+                DownloadResult.task_instance_id == instance_id,
+            ).subquery()
+            where.append(or_(
+                ~TaskResult.id.in_(select(has_dr.c)),
+                TaskResult.id.in_(select(dr_pending.c)),
+            ))
+        else:
+            dr_subq = select(DownloadResult.task_result_id).where(
+                DownloadResult.download_status == download_status,
+                DownloadResult.task_instance_id == instance_id,
+            ).subquery()
+            where.append(TaskResult.id.in_(select(dr_subq.c)))
     stmt = (
         select(TaskResult)
         .where(*where)

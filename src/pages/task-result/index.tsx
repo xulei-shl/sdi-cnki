@@ -93,6 +93,15 @@ const REVIEW_OPTIONS = [
   { label: '已拒绝', value: 'rejected' },
 ]
 
+const DOWNLOAD_STATUS_OPTIONS = [
+  { label: '下载状态', value: '' },
+  { label: '未下载', value: 'pending' },
+  { label: '下载中', value: 'downloading' },
+  { label: '已完成', value: 'completed' },
+  { label: '失败', value: 'failed' },
+  { label: '跳过', value: 'skipped' },
+]
+
 
 export default function TaskResultPage() {
   const { id } = useParams<{ id: string }>()
@@ -120,6 +129,7 @@ export default function TaskResultPage() {
   const [publishYear, setPublishYear] = useState('')
   const [minScore, setMinScore] = useState('')
   const [includeDuplicate, setIncludeDuplicate] = useState(false)
+  const [downloadStatus, setDownloadStatus] = useState('')
 
   const [exporting, setExporting] = useState(false)
   const [retrying, setRetrying] = useState(false)
@@ -145,13 +155,14 @@ export default function TaskResultPage() {
       if (publishYear) params.publish_year = parseInt(publishYear)
       if (minScore) params.min_score = parseInt(minScore)
       if (includeDuplicate) params.include_duplicate = true
+      if (downloadStatus) params.download_status = downloadStatus
       const res = await getTaskResults(instanceId, params)
       setResults(res.data.items || [])
       setTotal(res.data.total || 0)
     } finally {
       setLoading(false)
     }
-  }, [instanceId, page, reviewStatus, analysisStatus, analysisResult, keyword, publishYear, minScore, includeDuplicate])
+  }, [instanceId, page, reviewStatus, analysisStatus, analysisResult, keyword, publishYear, minScore, includeDuplicate, downloadStatus])
 
   useEffect(() => { fetchInstance(); fetchResults() }, [fetchInstance, fetchResults])
 
@@ -478,6 +489,9 @@ export default function TaskResultPage() {
               </Select>
               <Select value={reviewStatus} onChange={(e) => { setReviewStatus(e.target.value); setPage(1) }} className="w-[120px]">
                 {REVIEW_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+              <Select value={downloadStatus} onChange={(e) => { setDownloadStatus(e.target.value); setPage(1) }} className="w-[120px]">
+                {DOWNLOAD_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </Select>
               <Input placeholder="题名关键词" value={keyword} onChange={(e) => { setKeyword(e.target.value); setPage(1) }} className="w-[150px]" />
               <Input placeholder="年份" value={publishYear} onChange={(e) => { setPublishYear(e.target.value); setPage(1) }} className="w-[80px]" />
