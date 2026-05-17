@@ -344,6 +344,21 @@ export default function TaskInstancePage() {
               <DetailRow label="检索总数">{selectedInstance.search_result_count}</DetailRow>
               <DetailRow label="有效数据">{selectedInstance.valid_data_count}</DetailRow>
               <DetailRow label="重复数">{selectedInstance.duplicate_count}</DetailRow>
+              <DetailRow label="LLM分析">
+                已完成 {selectedInstance.llm_analysis_completed_count ?? 0}
+                <span className="text-muted-foreground">（通过 {selectedInstance.llm_analysis_passed_count ?? 0}/拒绝 {selectedInstance.llm_analysis_rejected_count ?? 0}）</span>
+                失败 {selectedInstance.llm_analysis_failed_count ?? 0}
+              </DetailRow>
+              <DetailRow label="人工审核">
+                通过 {selectedInstance.manual_review_passed_count ?? 0}
+                <span className="text-muted-foreground"> / </span>
+                拒绝 {selectedInstance.manual_review_rejected_count ?? 0}
+              </DetailRow>
+              <DetailRow label="下载">
+                成功 {selectedInstance.download_success_count ?? 0}
+                <span className="text-muted-foreground"> / </span>
+                失败 {selectedInstance.download_failed_count ?? 0}
+              </DetailRow>
             </DetailSection>
 
             {selectedInstance.error_message && (

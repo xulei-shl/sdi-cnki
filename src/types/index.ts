@@ -66,6 +66,14 @@ export interface TaskInstance {
   search_result_count: number
   valid_data_count: number
   duplicate_count: number
+  llm_analysis_completed_count?: number
+  llm_analysis_passed_count?: number
+  llm_analysis_rejected_count?: number
+  llm_analysis_failed_count?: number
+  manual_review_passed_count?: number
+  manual_review_rejected_count?: number
+  download_success_count?: number
+  download_failed_count?: number
   error_message: string | null
   started_at: string | null
   search_completed_at: string | null
