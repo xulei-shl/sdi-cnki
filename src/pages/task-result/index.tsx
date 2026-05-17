@@ -23,7 +23,6 @@ const STEP_CONFIG: { label: string; match: TaskStatus[] }[] = [
   { label: '检索中', match: ['running', 'search_completed'] },
   { label: '分析中', match: ['analyzing'] },
   { label: '审核中', match: ['analyzing_completed'] },
-  { label: '等待下载', match: ['ready_for_download'] },
   { label: '下载排队中', match: ['download_queued'] },
   { label: '下载中', match: ['downloading'] },
   { label: '已完成', match: ['completed'] },
@@ -164,7 +163,7 @@ export default function TaskResultPage() {
     sse.on('task.progress', (data: any) => {
       if (data.status === 'analyzing') {
         setAnalyzeProgress({ active: true, analyzed: data.analyzed ?? 0, total: data.total ?? 0, failed: data.failed ?? 0 })
-      } else if (['search_completed', 'analyzing_completed', 'completed'].includes(data.status)) {
+      } else if (['search_completed', 'analyzing_completed', 'download_queued', 'completed'].includes(data.status)) {
         setRetrying(false)
         setAnalyzeProgress({ active: false, analyzed: 0, total: 0, failed: 0 })
         fetchInstance(); fetchResults()
@@ -445,12 +444,12 @@ export default function TaskResultPage() {
                   {exporting ? '导出中...' : '结果导出'}
                 </Button>
               )}
-              {['analyzing_completed', 'ready_for_download', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
+              {['analyzing_completed', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
                 <Button size="sm" variant="outline" onClick={handleRetryAnalysis} disabled={retrying}>
                   {retrying ? '分析中...' : 'LLM 分析'}
                 </Button>
               )}
-              {['analyzing_completed', 'ready_for_download', 'downloading'].includes(instance?.status || '') && (
+              {['analyzing_completed', 'downloading'].includes(instance?.status || '') && (
                 <Button size="sm" variant="outline" onClick={handleDownload}>PDF 下载</Button>
               )}
             </div>

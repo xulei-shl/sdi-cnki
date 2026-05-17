@@ -26,7 +26,6 @@ const STATUS_MAP: Record<TaskStatus, { label: string; variant: 'info' | 'warning
   search_completed: { label: '已检索', variant: 'info' },
   analyzing: { label: '分析中', variant: 'info' },
   analyzing_completed: { label: '审核中', variant: 'info' },
-  ready_for_download: { label: '等待下载', variant: 'info' },
   download_queued: { label: '下载排队中', variant: 'warning' },
   downloading: { label: '下载中', variant: 'info' },
   completed: { label: '已完成', variant: 'success' },

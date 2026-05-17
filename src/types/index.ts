@@ -82,7 +82,6 @@ export type TaskStatus =
   | 'search_completed'
   | 'analyzing'
   | 'analyzing_completed'
-  | 'ready_for_download'
   | 'download_queued'
   | 'downloading'
   | 'completed'

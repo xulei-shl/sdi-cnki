@@ -381,7 +381,7 @@ async def start_download(
     inst = result.scalar_one_or_none()
     if not inst:
         raise NotFoundError("TaskInstance", instance_id)
-    if inst.status not in ("analyzing_completed", "ready_for_download", "downloading", "download_queued"):
+    if inst.status not in ("analyzing_completed", "downloading", "download_queued"):
         raise ValidationError(f"Cannot download in status: {inst.status}")
     inst.status = "download_queued"
     from app.task_queue.crud import TaskQueueService

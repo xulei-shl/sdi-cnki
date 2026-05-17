@@ -116,7 +116,7 @@ sdi-cnki/ (v2)
 
 ```
 pending → running → search_completed → analyzing
-→ analyzing_completed → ready_for_download → downloading → completed
+→ analyzing_completed → download_queued → downloading → completed
 ```
 
 任意阶段失败 → `failed`，通过 SSE 和企微 Webhook 即时通知。

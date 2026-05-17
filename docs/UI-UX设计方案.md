@@ -241,11 +241,11 @@
 | ② 检索中 | `running` | 蓝色 + 加载动画 |
 | ③ 分析中 | `analyzing` | 蓝色 + 加载动画 |
 | ④ 审核中 | `analyzing_completed` | 蓝色（静态，等待人工操作） |
-| ⑤ 等待下载 | `ready_for_download` | 蓝色（静态，已入队等待 worker 调度）|
+| ⑤ 下载排队中 | `download_queued` | 蓝色（静态，已入队待 worker 调度） |
 | ⑥ 下载中 | `downloading` | 蓝色 + 加载动画 |
 | ⑦ 已完成 | `completed` | 绿色 |
 
-**⑤ 等待下载说明**：用户点击「开始下载」后，实例先进入 `ready_for_download`（已排队但尚未被 worker 取走），download worker 取走后才变为 `downloading`。此状态需在前端正常展示，不可静默忽略。
+**⑤ 下载排队中说明**：用户点击「开始下载」后，实例先进入 `download_queued`，download worker 取走后才变为 `downloading`。
 
 **异常状态**：
 | 展示 | 对应 status | 颜色 |
@@ -604,6 +604,7 @@ data: {}
 |------|------|--------|----------|
 | v1.0 | 2026-05-15 | - | 初稿创建，基于 UI-UX需求.md 结构化重写 |
 | v1.1 | 2026-05-15 | - | 补充 ready_for_download 状态；统一相关性评分为 0-10 整数；补充阶段时间戳字段来源；补充 SSE 断线重连规范；说明 auto_run 字段的前端影响 |
+| v1.2 | 2026-05-17 | - | 移除 ready_for_download 状态，downloading 前增加 download_queued；实际后端跳过中间状态，analyzing_completed 直接进入 download_queued |
 | v1.2 | 2026-05-15 | - | 补充第七章：前端框架实现规范 (基于 pure-admin-thin) |
 
 ---
