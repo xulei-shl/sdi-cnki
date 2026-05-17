@@ -368,9 +368,9 @@ async def start_download(
     inst = result.scalar_one_or_none()
     if not inst:
         raise NotFoundError("TaskInstance", instance_id)
-    if inst.status not in ("analyzing_completed", "ready_for_download", "downloading"):
+    if inst.status not in ("analyzing_completed", "ready_for_download", "downloading", "download_queued"):
         raise ValidationError(f"Cannot download in status: {inst.status}")
-    inst.status = "ready_for_download"
+    inst.status = "download_queued"
     from app.task_queue.crud import TaskQueueService
     svc = TaskQueueService(db)
     await svc.enqueue(
@@ -380,6 +380,8 @@ async def start_download(
         task_key=f"download_{inst.instance_no}",
     )
     await db.commit()
+    from app.routers.sse import broadcast_event
+    await broadcast_event(instance_id, "task.progress", {"status": "download_queued"})
     return {"message": "Download queued"}
 
 
@@ -407,6 +409,9 @@ async def run_task_instance(
         params_json=json.dumps({"instance_id": instance_id, "instance_no": inst.instance_no}),
         task_key=inst.instance_no,
     )
+    inst.status = "search_queued"
     await db.commit()
+    from app.routers.sse import broadcast_event
+    await broadcast_event(instance_id, "task.progress", {"status": "search_queued"})
     await log_operation(db, current_user.id, "run", "task_instance", instance_id, f"Run instance {inst.instance_no}")
     return {"message": "Instance queued for execution"}

@@ -330,5 +330,9 @@ async def execute_meta_task(
             params_json=json.dumps({"instance_id": instance.id, "instance_no": instance.instance_no}),
             task_key=instance.instance_no,
         )
+        instance.status = "search_queued"
+        await db.commit()
+    from app.routers.sse import broadcast_event
+    await broadcast_event(instance.id, "task.progress", {"status": instance.status})
     await log_operation(db, current_user.id, "execute", "meta_task", task_id, f"Executed meta task {task.name}")
     return {"instance_id": instance.id, "instance_no": instance.instance_no}

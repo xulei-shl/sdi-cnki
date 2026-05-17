@@ -21,11 +21,13 @@ const DATE_RANGE_LABELS: Record<string, string> = {
 
 const STATUS_MAP: Record<TaskStatus, { label: string; variant: 'info' | 'warning' | 'success' | 'destructive' | 'secondary' | 'default' }> = {
   pending: { label: '待执行', variant: 'secondary' },
+  search_queued: { label: '检索排队中', variant: 'warning' },
   running: { label: '检索中', variant: 'info' },
   search_completed: { label: '已检索', variant: 'info' },
   analyzing: { label: '分析中', variant: 'info' },
   analyzing_completed: { label: '审核中', variant: 'info' },
   ready_for_download: { label: '等待下载', variant: 'info' },
+  download_queued: { label: '下载排队中', variant: 'warning' },
   downloading: { label: '下载中', variant: 'info' },
   completed: { label: '已完成', variant: 'success' },
   failed: { label: '失败', variant: 'destructive' },
@@ -35,10 +37,12 @@ const STATUS_MAP: Record<TaskStatus, { label: string; variant: 'info' | 'warning
 const STATUS_OPTIONS = [
   { label: '全部', value: '' },
   { label: '待执行', value: 'pending' },
+  { label: '检索排队中', value: 'search_queued' },
   { label: '检索中', value: 'running' },
   { label: '已检索', value: 'search_completed' },
   { label: '分析中', value: 'analyzing' },
   { label: '审核中', value: 'analyzing_completed' },
+  { label: '下载排队中', value: 'download_queued' },
   { label: '下载中', value: 'downloading' },
   { label: '已完成', value: 'completed' },
   { label: '失败', value: 'failed' },

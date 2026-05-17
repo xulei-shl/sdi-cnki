@@ -77,11 +77,13 @@ export interface TaskInstance {
 
 export type TaskStatus =
   | 'pending'
+  | 'search_queued'
   | 'running'
   | 'search_completed'
   | 'analyzing'
   | 'analyzing_completed'
   | 'ready_for_download'
+  | 'download_queued'
   | 'downloading'
   | 'completed'
   | 'failed'

@@ -18,10 +18,12 @@ import type { TaskInstance, TaskStatus } from '@/types'
 
 const STEP_CONFIG: { label: string; match: TaskStatus[] }[] = [
   { label: '待执行', match: ['pending'] },
+  { label: '检索排队中', match: ['search_queued'] },
   { label: '检索中', match: ['running', 'search_completed'] },
   { label: '分析中', match: ['analyzing'] },
   { label: '审核中', match: ['analyzing_completed'] },
   { label: '等待下载', match: ['ready_for_download'] },
+  { label: '下载排队中', match: ['download_queued'] },
   { label: '下载中', match: ['downloading'] },
   { label: '已完成', match: ['completed'] },
 ]
