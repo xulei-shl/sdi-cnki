@@ -25,7 +25,7 @@ export default function LoginPage() {
       await login(username, password)
       navigate('/')
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || '登录失败')
+      toast.error(err?.response?.data?.message || err?.response?.data?.detail || '登录失败')
     } finally {
       setLoading(false)
     }
@@ -43,6 +43,7 @@ export default function LoginPage() {
               <Label htmlFor="username">用户名</Label>
               <Input
                 id="username"
+                autoComplete="username"
                 placeholder="请输入用户名"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -53,6 +54,7 @@ export default function LoginPage() {
               <Input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 placeholder="请输入密码"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
