@@ -277,7 +277,7 @@ export default function TaskInstancePage() {
                             编辑
                           </Button>
                         )}
-                        {inst.status === 'pending' && (
+                        {(inst.status === 'pending' || inst.search_result_count === 0) && (
                           <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={(e) => handleDeleteInstance(e, inst)} disabled={deletingId === inst.id}>
                             {deletingId === inst.id ? '删除中...' : '删除'}
                           </Button>
