@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 import { getTaskInstance } from '@/api/task-instances'
 import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis, downloadExportFile } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
-import { Check, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { TaskInstance, TaskStatus } from '@/types'
 
@@ -214,10 +214,20 @@ export default function TaskResultPage() {
   }
 
   const toggleAll = () => {
-    if (selectedIds.size === results.length) {
-      setSelectedIds(new Set())
+    const currentIds = results.map(r => r.id)
+    const allSelectedOnPage = currentIds.every(id => selectedIds.has(id))
+    if (allSelectedOnPage) {
+      setSelectedIds(prev => {
+        const next = new Set(prev)
+        currentIds.forEach(id => next.delete(id))
+        return next
+      })
     } else {
-      setSelectedIds(new Set(results.map(r => r.id)))
+      setSelectedIds(prev => {
+        const next = new Set(prev)
+        currentIds.forEach(id => next.add(id))
+        return next
+      })
     }
   }
 
@@ -274,15 +284,13 @@ export default function TaskResultPage() {
   }
 
   const handleBatchPass = () => {
-    const ids = results.filter(r => selectedIds.has(r.id) && r.is_passed !== true).map(r => r.id)
-    if (!ids.length) { toast.info('已全部通过'); return }
-    setConfirmAction({ type: 'batch-pass', count: ids.length })
+    if (!selectedIds.size) { toast.info('请先选择要操作的项'); return }
+    setConfirmAction({ type: 'batch-pass', count: selectedIds.size })
   }
 
   const handleBatchReject = () => {
-    const ids = results.filter(r => selectedIds.has(r.id) && r.is_passed !== false).map(r => r.id)
-    if (!ids.length) { toast.info('已全部拒绝'); return }
-    setConfirmAction({ type: 'batch-reject', count: ids.length })
+    if (!selectedIds.size) { toast.info('请先选择要操作的项'); return }
+    setConfirmAction({ type: 'batch-reject', count: selectedIds.size })
   }
 
   const handleDownload = () => {
@@ -301,24 +309,26 @@ export default function TaskResultPage() {
 
   const doConfirm = async () => {
     if (!confirmAction) return
-    const { type, count } = confirmAction
+    const { type } = confirmAction
     setConfirmAction(null)
-    const pendingIds = (filterFn: (r: any) => boolean) =>
-      results.filter(r => selectedIds.has(r.id) && filterFn(r)).map(r => r.id)
 
     try {
       switch (type) {
         case 'batch-pass': {
-          const ids = pendingIds(r => r.is_passed !== true)
+          const ids = Array.from(selectedIds)
+          if (!ids.length) break
           await batchUpdateResults(instanceId, { result_ids: ids, action: 'pass' })
           toast.success(`已通过 ${ids.length} 条`)
+          setSelectedIds(new Set())
           fetchResults()
           break
         }
         case 'batch-reject': {
-          const ids = pendingIds(r => r.is_passed !== false)
+          const ids = Array.from(selectedIds)
+          if (!ids.length) break
           await batchUpdateResults(instanceId, { result_ids: ids, action: 'reject' })
           toast.success(`已拒绝 ${ids.length} 条`)
+          setSelectedIds(new Set())
           fetchResults()
           break
         }
@@ -479,7 +489,18 @@ export default function TaskResultPage() {
 
             {/* Batch Actions */}
             <div className="flex items-center gap-3">
-              {selectedIds.size > 0 && <span className="text-sm font-medium text-primary">已选中 {selectedIds.size} 项</span>}
+              {selectedIds.size > 0 && (
+                <>
+                  <span className="text-sm font-medium text-primary">已选中 {selectedIds.size} 项</span>
+                  <button
+                    onClick={() => setSelectedIds(new Set())}
+                    className="p-1 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors text-muted-foreground"
+                    title="清空选择"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </>
+              )}
               <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchPass}>批量通过</Button>
               <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchReject}>批量拒绝</Button>
               {['analyzing_completed', 'download_queued', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
@@ -505,7 +526,8 @@ export default function TaskResultPage() {
                 <TableRow>
                   <TableHead className="w-10">
                     <Checkbox
-                      checked={results.length > 0 && selectedIds.size === results.length}
+                      checked={results.length > 0 && results.every(r => selectedIds.has(r.id))}
+                      ref={el => { if (el) el.indeterminate = results.some(r => selectedIds.has(r.id)) && !results.every(r => selectedIds.has(r.id)) }}
                       onChange={toggleAll}
                     />
                   </TableHead>
