@@ -30,8 +30,8 @@ async def start_export(
     instance = result.scalar_one_or_none()
     if not instance:
         raise NotFoundError("TaskInstance", instance_id)
-    if instance.status not in ("analyzing_completed", "completed", "failed"):
-        raise ValidationError(f"状态 {instance.status} 不允许导出，需要 analyzing_completed/completed/failed")
+    if instance.status not in ("analyzing_completed", "download_queued", "downloading", "completed", "failed"):
+        raise ValidationError(f"状态 {instance.status} 不允许导出，需要 analyzing_completed/download_queued/downloading/completed/failed")
 
     export_task = ExportTask(
         task_instance_id=instance_id,
@@ -51,7 +51,7 @@ async def start_export(
             "instance_id": instance_id,
             "instance_no": instance.instance_no,
         }),
-        task_key=f"export_{instance.instance_no}",
+        task_key=f"export_{instance.instance_no}_{export_task.id}",
     )
 
     return {"export_id": export_task.id, "status": "pending", "message": "导出任务已入队"}

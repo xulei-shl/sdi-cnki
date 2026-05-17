@@ -7,9 +7,10 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Pagination } from '@/components/ui/pagination'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
+import { AxiosError } from 'axios'
 import { toast } from 'sonner'
 import { getTaskInstances, getTaskInstance, deleteTaskInstance, runTaskInstance, type TaskInstanceQuery } from '@/api/task-instances'
-import { startExport, getExportStatus } from '@/api/task-results'
+import { startExport, getExportStatus, downloadExportFile } from '@/api/task-results'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EditDialog } from './edit-dialog'
 import type { TaskInstance, TaskStatus } from '@/types'
@@ -80,7 +81,7 @@ export default function TaskInstancePage() {
           const sr = await getExportStatus(exportId)
           if (sr.data.status === 'completed') {
             setExportingId(null)
-            window.open(`/api/v1/exports/${exportId}/download`, '_blank')
+            try { await downloadExportFile(exportId) } catch { toast.error('下载文件失败') }
             toast.success('导出完成')
           } else if (sr.data.status === 'failed') {
             setExportingId(null)
@@ -94,9 +95,10 @@ export default function TaskInstancePage() {
         }
       }
       setTimeout(poll, 3000)
-    } catch {
+    } catch (err) {
       setExportingId(null)
-      toast.error('启动导出失败')
+      const msg = err instanceof AxiosError ? err.response?.data?.message || err.message : '启动导出失败'
+      toast.error(`导出失败: ${msg}`)
     }
   }
 
@@ -281,7 +283,7 @@ export default function TaskInstancePage() {
                             {deletingId === inst.id ? '删除中...' : '删除'}
                           </Button>
                         )}
-                        {['analyzing_completed', 'completed', 'failed'].includes(inst.status) && (
+                        {['analyzing_completed', 'download_queued', 'downloading', 'completed', 'failed'].includes(inst.status) && (
                           <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleExport(e, inst)} disabled={exportingId === inst.id}>
                             {exportingId === inst.id ? '导出中...' : '导出'}
                           </Button>

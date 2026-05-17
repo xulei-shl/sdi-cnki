@@ -136,10 +136,12 @@ def _generate_results_xlsx(task_results: list[TaskResult], output_path: str) -> 
         else:
             ws.cell(row=row_idx, column=20, value="未审")
         ws.cell(row=row_idx, column=21, value=download_status)
-        ws.cell(row=row_idx, column=22, value=(parsed or {}).get("relevance_score"))
-        ws.cell(row=row_idx, column=23, value=(parsed or {}).get("relevance_level"))
-        ws.cell(row=row_idx, column=24, value=(parsed or {}).get("is_relevant"))
-        ws.cell(row=row_idx, column=25, value=(parsed or {}).get("reasoning"))
+        p = parsed or {}
+        ws.cell(row=row_idx, column=22, value=p.get("relevance_score"))
+        ws.cell(row=row_idx, column=23, value=p.get("relevance_level"))
+        is_rel = p.get("is_relevant")
+        ws.cell(row=row_idx, column=24, value=is_rel if is_rel is not None else p.get("is_target_topic"))
+        ws.cell(row=row_idx, column=25, value=p.get("reasoning"))
 
     wb.save(output_path)
 

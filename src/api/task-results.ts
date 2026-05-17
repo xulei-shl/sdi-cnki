@@ -48,6 +48,21 @@ export function startExport(instanceId: number) {
   return http.post<{ export_id: number; status: string; message: string }>(`/task-instances/${instanceId}/export`)
 }
 
+export async function downloadExportFile(exportId: number) {
+  const response = await http.get(`/exports/${exportId}/download`, { responseType: 'blob' })
+  const disposition = response.headers['content-disposition'] || ''
+  const match = disposition.match(/filename="?(.+?)"?$/)
+  const filename = match?.[1] || `export_${exportId}.zip`
+  const url = window.URL.createObjectURL(response.data)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.URL.revokeObjectURL(url)
+}
+
 export function getExportStatus(exportId: number) {
   return http.get<{
     id: number

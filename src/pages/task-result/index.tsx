@@ -9,9 +9,10 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { Pagination } from '@/components/ui/pagination'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
 import { Separator } from '@/components/ui/separator'
+import { AxiosError } from 'axios'
 import { toast } from 'sonner'
 import { getTaskInstance } from '@/api/task-instances'
-import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis } from '@/api/task-results'
+import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis, downloadExportFile } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
 import { Check } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -182,9 +183,11 @@ export default function TaskResultPage() {
       setAnalyzeProgress({ active: false, analyzed: 0, total: 0, failed: 0 })
       fetchInstance(); fetchResults()
     })
-    sse.on('export.completed', (data: any) => {
+    sse.on('export.completed', async (data: any) => {
       setExporting(false)
-      if (data?.export_id) window.open(`/api/v1/exports/${data.export_id}/download`, '_blank')
+      if (data?.export_id) {
+        try { await downloadExportFile(data.export_id) } catch { toast.error('下载文件失败') }
+      }
       toast.success('导出完成')
     })
     sse.on('export.failed', (data: any) => {
@@ -312,7 +315,7 @@ export default function TaskResultPage() {
                 const sr = await getExportStatus(exportId)
                 if (sr.data.status === 'completed') {
                   setExporting(false)
-                  window.open(`/api/v1/exports/${exportId}/download`, '_blank')
+                  try { await downloadExportFile(exportId) } catch { toast.error('下载文件失败') }
                   toast.success('导出完成')
                 } else if (sr.data.status === 'failed') {
                   setExporting(false)
@@ -326,9 +329,10 @@ export default function TaskResultPage() {
               }
             }
             setTimeout(poll, 3000)
-          } catch {
+          } catch (err) {
             setExporting(false)
-            toast.error('启动导出失败')
+            const msg = err instanceof AxiosError ? err.response?.data?.message || err.message : '启动导出失败'
+            toast.error(`导出失败: ${msg}`)
           }
           break
         }
@@ -439,7 +443,7 @@ export default function TaskResultPage() {
               {selectedIds.size > 0 && <span className="text-sm font-medium text-primary">已选中 {selectedIds.size} 项</span>}
               <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchPass}>批量通过</Button>
               <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchReject}>批量拒绝</Button>
-              {['analyzing_completed', 'completed', 'failed'].includes(instance?.status || '') && (
+              {['analyzing_completed', 'download_queued', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
                 <Button size="sm" variant="outline" onClick={handleExport} disabled={exporting}>
                   {exporting ? '导出中...' : '结果导出'}
                 </Button>
