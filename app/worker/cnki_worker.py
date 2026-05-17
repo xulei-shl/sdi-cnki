@@ -185,6 +185,7 @@ async def run_cnki_search(
 
         from app.services.wecom_notifier import send_notification
         await send_notification(db, {
+            "instance_id": instance_id,
             "stage": "检索",
             "meta_task_name": instance.meta_task.name if instance.meta_task else "",
             "username": instance.creator.username if instance.creator else "",

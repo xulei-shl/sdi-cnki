@@ -169,6 +169,72 @@ async def get_task_instance(
     if current_user.role != "admin" and inst.creator_id != current_user.id:
         from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
+
+    from app.models.llm_analysis_result import LlmAnalysisResult
+    from app.models.download_result import DownloadResult
+
+    llm_completed = 0
+    llm_passed = 0
+    llm_rejected = 0
+    llm_failed = 0
+    analysis_stmt = select(
+        LlmAnalysisResult.status,
+        LlmAnalysisResult.parsed_result,
+    ).where(LlmAnalysisResult.task_instance_id == instance_id)
+    for row in (await db.execute(analysis_stmt)).all():
+        if row.status == "completed":
+            llm_completed += 1
+            if row.parsed_result:
+                try:
+                    p = json.loads(row.parsed_result)
+                    is_rel = p.get("is_relevant")
+                    if is_rel is None:
+                        is_rel = p.get("is_target_topic")
+                    if is_rel is True:
+                        llm_passed += 1
+                    elif is_rel is False:
+                        llm_rejected += 1
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        elif row.status == "failed":
+            llm_failed += 1
+
+    manual_passed = (
+        await db.execute(
+            select(func.count(TaskResult.id)).where(
+                TaskResult.task_instance_id == instance_id,
+                TaskResult.is_duplicate == False,
+                TaskResult.is_passed == True,
+            )
+        )
+    ).scalar() or 0
+    manual_rejected = (
+        await db.execute(
+            select(func.count(TaskResult.id)).where(
+                TaskResult.task_instance_id == instance_id,
+                TaskResult.is_duplicate == False,
+                TaskResult.is_passed == False,
+            )
+        )
+    ).scalar() or 0
+
+    download_success = 0
+    download_failed = 0
+    for row in (
+        await db.execute(
+            select(
+                DownloadResult.download_status,
+                func.count(DownloadResult.id),
+            ).where(
+                DownloadResult.task_instance_id == instance_id
+            ).group_by(DownloadResult.download_status)
+        )
+    ).all():
+        if row[0] == "completed":
+            download_success = row[1]
+        elif row[0] == "failed":
+            download_failed = row[1]
+
     return {
         "id": inst.id,
         "meta_task_id": inst.meta_task_id,
@@ -190,6 +256,14 @@ async def get_task_instance(
         "download_started_at": inst.download_started_at.isoformat() if inst.download_started_at else None,
         "completed_at": inst.completed_at.isoformat() if inst.completed_at else None,
         "created_at": inst.created_at.isoformat() if inst.created_at else "",
+        "llm_analysis_completed_count": llm_completed,
+        "llm_analysis_passed_count": llm_passed,
+        "llm_analysis_rejected_count": llm_rejected,
+        "llm_analysis_failed_count": llm_failed,
+        "manual_review_passed_count": manual_passed,
+        "manual_review_rejected_count": manual_rejected,
+        "download_success_count": download_success,
+        "download_failed_count": download_failed,
     }
 
 

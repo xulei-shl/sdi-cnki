@@ -160,7 +160,7 @@ export default function TaskResultPage() {
     if (!token || !instance) return
     if (['completed', 'failed', 'cancelled'].includes(instance.status)) return
 
-    const sse = new SseClient(instanceId, token)
+    const sse = new SseClient(instanceId, getAuthToken)
     sseRef.current = sse
     sse.on('task.progress', (data: any) => {
       if (data.status === 'analyzing') {

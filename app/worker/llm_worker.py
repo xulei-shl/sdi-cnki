@@ -123,6 +123,7 @@ async def run_llm_analysis(
 
         from app.services.wecom_notifier import send_notification
         await send_notification(db, {
+            "instance_id": instance_id,
             "stage": "分析",
             "meta_task_name": instance.meta_task.name if instance.meta_task else "",
             "username": instance.creator.username if instance.creator else "",
@@ -152,6 +153,7 @@ async def run_llm_analysis(
         })
         from app.services.wecom_notifier import send_notification
         await send_notification(db, {
+            "instance_id": instance_id,
             "stage": "分析",
             "meta_task_name": instance.meta_task.name if instance.meta_task else "",
             "username": instance.creator.username if instance.creator else "",
