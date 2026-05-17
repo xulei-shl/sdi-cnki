@@ -172,16 +172,22 @@ def cnki_download(keyword: str, output_dir: str = None, reuse_session: bool = Tr
     else:
         context = page.context
 
-    # 会话文件
+    # 会话文件（独立路径）
     session_dir = Path(os.environ.get('CNKI_SESSION_DIR', str(Path.home() / ".cache" / "cnki-session")))
     cookies_file = session_dir / "cookies.json"
     local_storage_file = session_dir / "local_storage.json"
+
+    # 共享 cookies 文件（与 cnki-search 同源）
+    shared_cookies_file = Path(__file__).resolve().parent.parent.parent.parent / "data" / "cookies" / "cnki_cookies.json"
 
     def save_session(ctx, pg):
         try:
             session_dir.mkdir(parents=True, exist_ok=True)
             cookies = ctx.cookies()
             cookies_file.write_text(json.dumps(cookies, ensure_ascii=False), encoding='utf-8')
+            # 同步到共享文件
+            shared_cookies_file.parent.mkdir(parents=True, exist_ok=True)
+            shared_cookies_file.write_text(json.dumps(cookies, ensure_ascii=False), encoding='utf-8')
             print(f"   ✓ Cookies 已保存")
             try:
                 ls = pg.evaluate("() => { let items = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); items[k] = localStorage.getItem(k); } return items; }")
@@ -194,12 +200,18 @@ def cnki_download(keyword: str, output_dir: str = None, reuse_session: bool = Tr
 
     def load_session(ctx, pg):
         try:
-            if not cookies_file.exists():
+            candidates = [cookies_file, shared_cookies_file]
+            cf = None
+            for c in candidates:
+                if c.exists():
+                    cf = c
+                    break
+            if cf is None:
                 print("   没有找到保存的会话")
                 return False
-            cookies = json.loads(cookies_file.read_text(encoding='utf-8'))
+            cookies = json.loads(cf.read_text(encoding='utf-8'))
             ctx.add_cookies(cookies)
-            print(f"   ✓ Cookies 已加载")
+            print(f"   ✓ Cookies 已加载 ({cf.name})")
             if local_storage_file.exists():
                 try:
                     ls = json.loads(local_storage_file.read_text(encoding='utf-8'))

@@ -43,7 +43,7 @@ def download_pdf(
     for source_name, download_func, kwargs in [
         ("zhesheke", zhesheke_download, {"keyword": article_title, "output_dir": out_str, "page": page}),
         ("wanfang", wanfang_download, {"keyword": article_title, "output_dir": out_str, "page": page}),
-        ("cnki", cnki_download, {"keyword": article_title, "output_dir": out_str, "page": page, "reuse_session": False}),
+        ("cnki", cnki_download, {"keyword": article_title, "output_dir": out_str, "page": page, "reuse_session": True}),
     ]:
         print(f"\n{'='*50}")
         print(f"[{source_name}] 尝试下载: {article_title[:50]}...")
@@ -74,7 +74,7 @@ def download_pdf(
             kwargs_map = {
                 "zhesheke": {"keyword": article_title, "output_dir": out_str, "page": page},
                 "wanfang": {"keyword": article_title, "output_dir": out_str, "page": page},
-                "cnki": {"keyword": article_title, "output_dir": out_str, "page": page, "reuse_session": False},
+                "cnki": {"keyword": article_title, "output_dir": out_str, "page": page, "reuse_session": True},
             }
             func_map = {
                 "zhesheke": zhesheke_download,
