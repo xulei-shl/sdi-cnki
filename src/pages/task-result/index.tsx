@@ -11,7 +11,7 @@ import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detai
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { getTaskInstance } from '@/api/task-instances'
-import { getTaskResults, markPass, batchUpdateResults, startDownload, startExport, getExportStatus } from '@/api/task-results'
+import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
 import { Check } from 'lucide-react'
 import type { TaskInstance, TaskStatus } from '@/types'
@@ -28,11 +28,40 @@ const STEP_CONFIG: { label: string; match: TaskStatus[] }[] = [
   { label: '已完成', match: ['completed'] },
 ]
 
-const ANALYSIS_BADGE: Record<string, { label: string; variant: 'success' | 'destructive' | 'secondary' | 'info' | 'warning' }> = {
-  pending: { label: '未分析', variant: 'secondary' },
-  analyzing: { label: '进行中', variant: 'info' },
-  completed: { label: '已完成', variant: 'success' },
-  failed: { label: '失败', variant: 'destructive' },
+const analysisTextColor = (status?: string, isTargetTopic?: boolean | null) => {
+  if (status === 'failed') return 'text-red-500'
+  if (status === 'analyzing') return 'text-blue-500'
+  if (status === 'completed') {
+    if (isTargetTopic === true) return 'text-green-600'
+    if (isTargetTopic === false) return 'text-amber-500'
+    return 'text-muted-foreground'
+  }
+  return 'text-muted-foreground'
+}
+
+const reviewTextColor = (isPassed: boolean | null) => {
+  if (isPassed === true) return 'text-green-600'
+  if (isPassed === false) return 'text-amber-500'
+  return 'text-muted-foreground'
+}
+
+const downloadTextColor = (status?: string) => {
+  if (status === 'completed') return 'text-green-600'
+  if (status === 'failed') return 'text-red-500'
+  if (status === 'downloading') return 'text-blue-500'
+  if (status === 'skipped') return 'text-yellow-600'
+  return 'text-muted-foreground'
+}
+
+const getAnalysisLabel = (status?: string, parsedResult?: any) => {
+  if (status === 'failed') return '失败'
+  if (status === 'analyzing') return '进行中'
+  if (status === 'completed') {
+    if (parsedResult?.is_target_topic === true) return '通过'
+    if (parsedResult?.is_target_topic === false) return '拒绝'
+    return '已完成'
+  }
+  return '未分析'
 }
 
 const DOWNLOAD_BADGE: Record<string, { label: string; variant: 'success' | 'destructive' | 'secondary' | 'info' | 'warning' }> = {
@@ -77,7 +106,7 @@ export default function TaskResultPage() {
   // Filters
   const [reviewStatus, setReviewStatus] = useState('')
   const [analysisStatus, setAnalysisStatus] = useState('')
-  const [journalKeyword, setJournalKeyword] = useState('')
+  const [keyword, setKeyword] = useState('')
   const [publishYear, setPublishYear] = useState('')
   const [minScore, setMinScore] = useState('')
   const [includeDuplicate, setIncludeDuplicate] = useState(false)
@@ -96,20 +125,20 @@ export default function TaskResultPage() {
   const fetchResults = useCallback(async () => {
     setLoading(true)
     try {
-      const params: any = { instance_id: instanceId, page, page_size: 20 }
+      const params: any = { page, page_size: 20 }
       if (reviewStatus) params.review_status = reviewStatus
       if (analysisStatus) params.analysis_status = analysisStatus
-      if (journalKeyword) params.journal_keyword = journalKeyword
+      if (keyword) params.keyword = keyword
       if (publishYear) params.publish_year = parseInt(publishYear)
       if (minScore) params.min_score = parseInt(minScore)
       if (includeDuplicate) params.include_duplicate = true
-      const res = await getTaskResults(params)
+      const res = await getTaskResults(instanceId, params)
       setResults(res.data.items || [])
       setTotal(res.data.total || 0)
     } finally {
       setLoading(false)
     }
-  }, [instanceId, page, reviewStatus, analysisStatus, journalKeyword, publishYear, minScore, includeDuplicate])
+  }, [instanceId, page, reviewStatus, analysisStatus, keyword, publishYear, minScore, includeDuplicate])
 
   useEffect(() => { fetchInstance(); fetchResults() }, [fetchInstance, fetchResults])
 
@@ -148,7 +177,7 @@ export default function TaskResultPage() {
 
   const stepIndex = instance ? STEP_CONFIG.findIndex(s => s.match.includes(instance.status)) : -1
 
-  const handleFilter = () => { setPage(1); fetchResults() }
+
 
   const toggleSelect = (id: number) => {
     setSelectedIds(prev => {
@@ -177,7 +206,7 @@ export default function TaskResultPage() {
 
   const handleSingleReject = async (row: any) => {
     try {
-      await markPass(row.id)
+      await markReject(row.id)
       row.is_passed = row.is_passed === false ? null : false
       toast.success(row.is_passed === false ? '已拒绝' : '已取消')
     } catch { toast.error('操作失败') }
@@ -187,7 +216,7 @@ export default function TaskResultPage() {
     const ids = results.filter(r => selectedIds.has(r.id) && r.is_passed !== true).map(r => r.id)
     if (!ids.length) { toast.info('已全部通过'); return }
     try {
-      await batchUpdateResults(instanceId, { ids, action: 'pass' })
+      await batchUpdateResults(instanceId, { result_ids: ids, action: 'pass' })
       toast.success(`已通过 ${ids.length} 条`)
       fetchResults()
     } catch { toast.error('批量操作失败') }
@@ -198,7 +227,7 @@ export default function TaskResultPage() {
     if (!ids.length) { toast.info('已全部拒绝'); return }
     if (!confirm('确认批量拒绝所选结果？')) return
     try {
-      await batchUpdateResults(instanceId, { ids, action: 'reject' })
+      await batchUpdateResults(instanceId, { result_ids: ids, action: 'reject' })
       toast.success(`已拒绝 ${ids.length} 条`)
       fetchResults()
     } catch { toast.error('批量操作失败') }
@@ -250,10 +279,10 @@ export default function TaskResultPage() {
   }
 
   const relevanceColor = (score: number | null) => {
-    if (score === null) return ''
-    if (score >= 7) return 'bg-green-500'
-    if (score >= 4) return 'bg-blue-500'
-    return 'bg-gray-400'
+    if (score === null) return 'text-muted-foreground'
+    if (score >= 7) return 'text-green-600 font-medium'
+    if (score >= 4) return 'text-blue-600'
+    return 'text-gray-400'
   }
 
   const formatDate = (d: string | null | undefined) => d ? d.slice(0, 16).replace('T', ' ') : '-'
@@ -261,7 +290,7 @@ export default function TaskResultPage() {
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Header Area */}
-      <div className="px-8 pt-8 pb-8 border-b shrink-0 flex flex-col gap-8 bg-muted/10">
+      <div className="px-8 pt-5 pb-5 border-b shrink-0 flex flex-col gap-5 bg-muted/10">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={() => navigate('/task-instances')}>&lt; 返回</Button>
@@ -273,21 +302,21 @@ export default function TaskResultPage() {
         </div>
 
         {/* Stage Indicator */}
-        <div className="flex items-center justify-between max-w-3xl mx-auto w-full">
+        <div className="flex items-center justify-between max-w-4xl mx-auto w-full">
           {STEP_CONFIG.map((step, i) => {
             const isActive = i === stepIndex
             const isDone = i < stepIndex
             const isError = instance?.status === 'failed'
             return (
-              <div key={step.label} className="flex flex-col items-center gap-2">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium border-2
+              <div key={step.label} className="flex flex-col items-center gap-1.5">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-medium border
                   ${isError && i === STEP_CONFIG.length - 1 ? 'border-destructive bg-destructive text-destructive-foreground' : ''}
                   ${isActive && !isError ? 'border-primary bg-primary text-primary-foreground shadow-sm' : ''}
                   ${isDone && !isError ? 'border-green-500 bg-green-500 text-white' : ''}
                   ${!isActive && !isDone && !(isError && i === STEP_CONFIG.length - 1) ? 'border-muted-foreground/30 text-muted-foreground' : ''}`}>
-                  {isDone ? <Check className="w-4 h-4" /> : i + 1}
+                  {isDone ? <Check className="w-3.5 h-3.5" /> : i + 1}
                 </div>
-                <span className={`text-xs ${isActive ? 'font-medium text-primary' : isDone ? 'text-green-600' : 'text-muted-foreground'}`}>
+                <span className={`text-[11px] ${isActive ? 'font-medium text-primary' : isDone ? 'text-green-600' : 'text-muted-foreground'}`}>
                   {step.label}
                 </span>
               </div>
@@ -316,40 +345,39 @@ export default function TaskResultPage() {
           <div className="px-8 py-5 border-b flex items-center justify-between flex-wrap gap-6 shrink-0">
             {/* Filters */}
             <div className="flex items-center gap-3 flex-wrap">
-              <Select value={reviewStatus} onChange={(e) => setReviewStatus(e.target.value)} className="w-[120px]">
+              <Select value={reviewStatus} onChange={(e) => { setReviewStatus(e.target.value); setPage(1) }} className="w-[120px]">
                 {REVIEW_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </Select>
-              <Select value={analysisStatus} onChange={(e) => setAnalysisStatus(e.target.value)} className="w-[120px]">
+              <Select value={analysisStatus} onChange={(e) => { setAnalysisStatus(e.target.value); setPage(1) }} className="w-[120px]">
                 {ANALYSIS_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </Select>
-              <Input placeholder="期刊名称" value={journalKeyword} onChange={(e) => setJournalKeyword(e.target.value)} className="w-[150px]" />
-              <Input placeholder="年份" value={publishYear} onChange={(e) => setPublishYear(e.target.value)} className="w-[80px]" />
-              <Select value={minScore} onChange={(e) => setMinScore(e.target.value)} className="w-[100px]">
+              <Input placeholder="题名关键词" value={keyword} onChange={(e) => { setKeyword(e.target.value); setPage(1) }} className="w-[150px]" />
+              <Input placeholder="年份" value={publishYear} onChange={(e) => { setPublishYear(e.target.value); setPage(1) }} className="w-[80px]" />
+              <Select value={minScore} onChange={(e) => { setMinScore(e.target.value); setPage(1) }} className="w-[100px]">
                 <option value="">评分不限</option>
                 <option value="4">≥4</option>
                 <option value="6">≥6</option>
                 <option value="8">≥8</option>
                 <option value="9">≥9</option>
               </Select>
-              <label className="flex items-center gap-1 text-sm bg-accent/50 px-2 py-1.5 rounded-md">
-                <Checkbox checked={includeDuplicate} onChange={(e) => setIncludeDuplicate(e.target.checked)} />
+              <label className="flex items-center gap-1 text-sm bg-accent/50 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/80 transition-colors">
+                <Checkbox checked={includeDuplicate} onChange={(e) => { setIncludeDuplicate(e.target.checked); setPage(1) }} />
                 <span className="ml-1">含重复</span>
               </label>
-              <Button size="sm" variant="secondary" onClick={handleFilter}>筛选</Button>
             </div>
 
             {/* Batch Actions */}
             <div className="flex items-center gap-3">
               {selectedIds.size > 0 && <span className="text-sm font-medium text-primary">已选中 {selectedIds.size} 项</span>}
-              <Button size="sm" variant="secondary" disabled={selectedIds.size === 0} onClick={handleBatchPass}>批量通过</Button>
-              <Button size="sm" variant="secondary" disabled={selectedIds.size === 0} onClick={handleBatchReject}>批量拒绝</Button>
+              <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchPass}>批量通过</Button>
+              <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchReject}>批量拒绝</Button>
               {['analyzing_completed', 'completed', 'failed'].includes(instance?.status || '') && (
-                <Button size="sm" onClick={handleExport} disabled={exporting}>
+                <Button size="sm" variant="outline" onClick={handleExport} disabled={exporting}>
                   {exporting ? '导出中...' : '结果导出'}
                 </Button>
               )}
               {['analyzing_completed', 'ready_for_download', 'downloading'].includes(instance?.status || '') && (
-                <Button size="sm" onClick={handleDownload}>开始下载</Button>
+                <Button size="sm" variant="outline" onClick={handleDownload}>开始下载</Button>
               )}
             </div>
           </div>
@@ -365,20 +393,18 @@ export default function TaskResultPage() {
                       onChange={toggleAll}
                     />
                   </TableHead>
-                  <TableHead className="min-w-[250px]">题名</TableHead>
-                  <TableHead className="w-[160px]">作者</TableHead>
+                  <TableHead className="min-w-[350px] flex-1">题名</TableHead>
                   <TableHead className="w-[180px]">期刊</TableHead>
-                  <TableHead className="w-[120px]">相关性</TableHead>
-                  <TableHead className="w-[80px]">分析</TableHead>
-                  <TableHead className="w-[80px]">审核</TableHead>
-                  <TableHead className="w-[80px]">下载</TableHead>
-                  <TableHead className="w-[160px]">操作</TableHead>
+                  <TableHead className="w-[70px] text-center">出版年</TableHead>
+                  <TableHead className="w-[120px] text-center">相关性</TableHead>
+                  <TableHead className="w-[180px]">状态 <span className="text-xs font-normal text-muted-foreground">(分析/审核/下载)</span></TableHead>
+                  <TableHead className="w-[160px] text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-12">
+                    <TableCell colSpan={7} className="text-center py-12">
                       <div className="flex items-center justify-center gap-2 text-muted-foreground animate-pulse">
                         <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
                         数据加载中...
@@ -386,48 +412,42 @@ export default function TaskResultPage() {
                     </TableCell>
                   </TableRow>
                 ) : results.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">暂无数据</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">暂无数据</TableCell></TableRow>
                 ) : results.map((row) => {
                   const score = row.llm_analysis?.parsed_result?.relevance_score ?? null
                   return (
-                    <TableRow key={row.id}>
-                      <TableCell>
+                    <TableRow key={row.id} className="cursor-pointer" onClick={() => viewDetail(row)}>
+                      <TableCell onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                         <Checkbox checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} />
                       </TableCell>
                       <TableCell>
-                        <div className="truncate max-w-[250px]" title={row.title}>
+                        <div className="truncate max-w-none" title={row.title}>
                           {row.title}
                           {row.is_duplicate && <Badge variant="warning" className="ml-1 text-xs">重复</Badge>}
                         </div>
                       </TableCell>
-                      <TableCell className="truncate max-w-[160px]">{row.authors || '-'}</TableCell>
-                      <TableCell className="truncate max-w-[180px]">{row.source_journal} ({row.publish_year})</TableCell>
+                      <TableCell className="truncate max-w-[180px]">{row.source_journal || '-'}</TableCell>
+                      <TableCell className="text-center">{row.publish_year ?? '-'}</TableCell>
+                      <TableCell className="text-center">
+                        <span className={`text-xs ${relevanceColor(score)}`}>{score ?? '-'}</span>
+                      </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full transition-all ${relevanceColor(score)}`} style={{ width: `${score ? (score / 10) * 100 : 0}%` }} />
-                          </div>
-                          <span className="text-xs w-7 text-right">{score ?? '-'}</span>
+                        <div className="flex items-center gap-1 text-xs">
+                          <span className={analysisTextColor(row.llm_analysis?.status, row.llm_analysis?.parsed_result?.is_target_topic)}>
+                            {getAnalysisLabel(row.llm_analysis?.status, row.llm_analysis?.parsed_result)}
+                          </span>
+                          <span className="text-muted-foreground">/</span>
+                          <span className={reviewTextColor(row.is_passed)}>
+                            {row.is_passed === true ? '通过' : row.is_passed === false ? '拒绝' : '未审'}
+                          </span>
+                          <span className="text-muted-foreground">/</span>
+                          <span className={downloadTextColor(row.download?.download_status)}>
+                            {DOWNLOAD_BADGE[row.download?.download_status || 'pending'].label}
+                          </span>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <Badge variant={ANALYSIS_BADGE[row.llm_analysis?.status || 'pending'].variant} className="text-xs">
-                          {ANALYSIS_BADGE[row.llm_analysis?.status || 'pending'].label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={row.is_passed === true ? 'success' : row.is_passed === false ? 'destructive' : 'secondary'} className="text-xs">
-                          {row.is_passed === true ? '通过' : row.is_passed === false ? '拒绝' : '未审'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={DOWNLOAD_BADGE[row.download?.download_status || 'pending'].variant} className="text-xs">
-                          {DOWNLOAD_BADGE[row.download?.download_status || 'pending'].label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
+                      <TableCell onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                         <div className="flex justify-end gap-3">
-                          <Button variant="link" className="h-auto p-0 font-normal" onClick={() => viewDetail(row)}>详情</Button>
                           <Button variant="link" className="h-auto p-0 font-normal" onClick={() => handleSinglePass(row)}>
                             {row.is_passed === true ? '取消' : '通过'}
                           </Button>
@@ -455,51 +475,62 @@ export default function TaskResultPage() {
           {activeResult && (
             <>
               <DetailSection label="文献信息">
-                <DetailRow label="题名">{activeResult.title}</DetailRow>
-                <DetailRow label="作者">{activeResult.authors || '-'}</DetailRow>
-                <DetailRow label="期刊">{activeResult.source_journal} ({activeResult.publish_year})</DetailRow>
-                <DetailRow label="DOI">{activeResult.doi || '-'}</DetailRow>
-                <DetailRow label="关键词">{activeResult.keywords || '-'}</DetailRow>
-                <div className="space-y-1 pt-1">
-                  <h3 className="text-xs font-medium text-muted-foreground">摘要</h3>
-                  <p className="text-sm line-clamp-4">{activeResult.abstract || '-'}</p>
-                </div>
+                <DetailRow label="题名" layout="vertical">{activeResult.title}</DetailRow>
+                <DetailRow label="作者" valueAlign="left">{activeResult.authors || '-'}</DetailRow>
+                <DetailRow label="期刊" valueAlign="left">{activeResult.source_journal || '-'}</DetailRow>
+                <DetailRow label="出版年" valueAlign="left">{activeResult.publish_year ?? '-'}</DetailRow>
+                <DetailRow label="作者单位" layout="vertical">{activeResult.organ || '-'}</DetailRow>
+                <DetailRow label="关键词" layout="vertical">{activeResult.keywords || '-'}</DetailRow>
+                <DetailRow label="基金" layout="vertical">{activeResult.fund || '-'}</DetailRow>
+                <DetailRow label="原文链接" valueAlign="left">
+                  {activeResult.original_url ? (
+                    <a href={activeResult.original_url} target="_blank" rel="noopener noreferrer" className="text-primary underline hover:text-primary/80 transition-colors truncate block max-w-[420px]" title={activeResult.original_url}>
+                      {activeResult.original_url}
+                    </a>
+                  ) : '-'}
+                </DetailRow>
+                <DetailRow label="摘要" layout="vertical">
+                  {activeResult.abstract || '-'}
+                </DetailRow>
               </DetailSection>
 
               <Separator />
 
               <DetailSection label="LLM 分析结果">
                 {activeResult.llm_analysis?.parsed_result ? (
-                  <div className="space-y-2">
-                    {Object.entries(activeResult.llm_analysis.parsed_result).map(([key, val]) => (
-                      <DetailRow key={key} label={key}>
-                        {['High', 'Medium', 'Low', 'Irrelevant'].includes(String(val)) ? (
-                          <Badge variant={val === 'High' ? 'success' : val === 'Medium' ? 'info' : val === 'Low' ? 'secondary' : 'destructive'} className="text-xs">
-                            {String(val)}
-                          </Badge>
-                        ) : (
-                          String(val)
-                        )}
-                      </DetailRow>
-                    ))}
+                  <div className="space-y-0.5">
+                    {Object.entries(activeResult.llm_analysis.parsed_result).map(([key, val]) => {
+                      const isLongText = typeof val === 'string' && val.length > 30
+                      return (
+                        <DetailRow key={key} label={key} layout={isLongText ? 'vertical' : 'horizontal'} valueAlign="left">
+                          {['High', 'Medium', 'Low', 'Irrelevant'].includes(String(val)) ? (
+                            <Badge variant={val === 'High' ? 'success' : val === 'Medium' ? 'info' : val === 'Low' ? 'secondary' : 'destructive'} className="text-xs">
+                              {String(val)}
+                            </Badge>
+                          ) : (
+                            String(val)
+                          )}
+                        </DetailRow>
+                      )
+                    })}
                   </div>
                 ) : activeResult.llm_analysis?.status === 'failed' ? (
-                  <p className="text-sm text-destructive">分析失败: {activeResult.llm_analysis.error_message || '未知错误'}</p>
+                  <p className="text-sm text-destructive px-3 py-2">分析失败: {activeResult.llm_analysis.error_message || '未知错误'}</p>
                 ) : (
-                  <p className="text-sm text-muted-foreground">暂无分析结果</p>
+                  <p className="text-sm text-muted-foreground px-3 py-2">暂无分析结果</p>
                 )}
               </DetailSection>
 
               <Separator />
 
               <DetailSection label="下载信息">
-                <DetailRow label="下载状态">
+                <DetailRow label="下载状态" valueAlign="left">
                   <Badge variant={DOWNLOAD_BADGE[activeResult.download?.download_status || 'pending'].variant} className="text-xs">
                     {DOWNLOAD_BADGE[activeResult.download?.download_status || 'pending'].label}
                   </Badge>
                 </DetailRow>
-                <DetailRow label="文件路径">{activeResult.download?.pdf_path || '-'}</DetailRow>
-                <DetailRow label="文件大小">
+                <DetailRow label="文件路径" layout="vertical">{activeResult.download?.pdf_path || '-'}</DetailRow>
+                <DetailRow label="文件大小" valueAlign="left">
                   {activeResult.download?.file_size ? `${activeResult.download.file_size} KB` : '-'}
                 </DetailRow>
               </DetailSection>

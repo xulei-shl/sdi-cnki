@@ -28,7 +28,7 @@ function Pagination({ current, total, pageSize, onChange }: PaginationProps) {
       <div className="flex items-center gap-1">
         <button
           className={cn(
-            'inline-flex items-center justify-center h-8 w-8 rounded text-sm',
+            'inline-flex items-center justify-center h-8 px-2 rounded text-sm whitespace-nowrap',
             current <= 1 ? 'text-muted-foreground cursor-not-allowed' : 'hover:bg-accent',
           )}
           disabled={current <= 1}
@@ -54,7 +54,7 @@ function Pagination({ current, total, pageSize, onChange }: PaginationProps) {
         )}
         <button
           className={cn(
-            'inline-flex items-center justify-center h-8 w-8 rounded text-sm',
+            'inline-flex items-center justify-center h-8 px-2 rounded text-sm whitespace-nowrap',
             current >= totalPages ? 'text-muted-foreground cursor-not-allowed' : 'hover:bg-accent',
           )}
           disabled={current >= totalPages}

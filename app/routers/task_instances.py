@@ -207,7 +207,7 @@ async def delete_instance(
     if current_user.role != "admin" and inst.creator_id != current_user.id:
         from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
-    if inst.status != "pending":
+    if inst.status != "pending" and inst.search_result_count != 0:
         raise ValidationError("Only pending instances can be deleted")
     task_stmt = select(MetaTask).where(MetaTask.id == inst.meta_task_id)
     task_result = await db.execute(task_stmt)
@@ -253,7 +253,7 @@ async def list_instance_results(
     include_duplicate: bool = Query(False),
     review_status: Optional[str] = Query(None),
     analysis_status: Optional[str] = Query(None),
-    journal_keyword: Optional[str] = Query(None),
+    keyword: Optional[str] = Query(None),
     publish_year: Optional[int] = Query(None),
     min_score: Optional[int] = Query(None, ge=0, le=10),
     current_user = Depends(get_current_user_from_header),
@@ -283,8 +283,8 @@ async def list_instance_results(
             LlmAnalysisResult.task_instance_id == instance_id,
         ).subquery()
         where.append(TaskResult.id.in_(select(subq.c)))
-    if journal_keyword:
-        where.append(TaskResult.source_journal.ilike(f"%{journal_keyword}%"))
+    if keyword:
+        where.append(TaskResult.title.ilike(f"%{keyword}%"))
     if publish_year:
         where.append(TaskResult.publish_year == publish_year)
     stmt = (
@@ -319,6 +319,12 @@ async def list_instance_results(
             "duplicate_ref_id": row.duplicate_ref_id,
             "is_passed": row.is_passed,
             "local_pdf_path": row.local_pdf_path,
+            "keywords": row.keywords,
+            "abstract": row.abstract,
+            "fund": row.fund,
+            "organ": row.organ,
+            "original_url": row.original_url,
+            "doi": row.doi,
             "llm_analysis": {
                 "status": row.llm_analysis.status if row.llm_analysis else None,
                 "parsed_result": parsed,

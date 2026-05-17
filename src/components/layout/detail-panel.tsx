@@ -54,11 +54,35 @@ export function DetailSection({ label, children, className }: { label: string; c
   )
 }
 
-export function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+export function DetailRow({
+  label,
+  children,
+  layout = 'horizontal',
+  valueAlign = 'right'
+}: {
+  label: string;
+  children: React.ReactNode;
+  layout?: 'horizontal' | 'vertical';
+  valueAlign?: 'left' | 'right';
+}) {
+  if (layout === 'vertical') {
+    return (
+      <div className="flex flex-col py-3 px-3 rounded-md transition-colors hover:bg-muted/40 group space-y-1.5">
+        <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground/80 transition-colors leading-relaxed">{label}</span>
+        <div className="text-sm text-foreground/90 leading-relaxed break-words whitespace-pre-wrap">
+          {children}
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex justify-between items-start py-2 px-3 rounded-md transition-colors hover:bg-muted/40 group">
+    <div className="flex justify-between items-start py-2.5 px-3 rounded-md transition-colors hover:bg-muted/40 group">
       <span className="text-sm font-medium text-muted-foreground shrink-0 mr-4 w-[120px] group-hover:text-foreground/80 transition-colors leading-relaxed">{label}</span>
-      <span className="text-sm text-right break-words flex-1 text-foreground font-medium leading-relaxed">{children}</span>
+      <span className={cn(
+        "text-sm break-words flex-1 min-w-0 leading-relaxed",
+        valueAlign === 'right' ? "text-right font-medium text-foreground" : "text-left text-foreground/90"
+      )}>{children}</span>
     </div>
   )
 }

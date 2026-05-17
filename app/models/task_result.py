@@ -35,7 +35,7 @@ class TaskResult(Base):
     title_normalized = Column(String(500), index=True)
     source_journal_normalized = Column(String(300))
     is_duplicate = Column(Boolean, default=False, index=True)
-    is_passed = Column(Boolean, default=False)
+    is_passed = Column(Boolean, nullable=True, default=None)
 
     local_pdf_path = Column(String(500))
 

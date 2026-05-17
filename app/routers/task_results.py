@@ -14,7 +14,7 @@ router = APIRouter()
 
 
 class PassRequest(BaseModel):
-    is_passed: bool
+    is_passed: bool = True
 
 
 @router.get("")
@@ -28,7 +28,7 @@ async def list_task_results(
 @router.put("/{result_id}/pass")
 async def mark_pass(
     result_id: int,
-    data: PassRequest,
+    data: PassRequest = PassRequest(),
     current_user = Depends(get_current_user_from_header),
     db: AsyncSession = Depends(get_db),
 ):
@@ -51,6 +51,6 @@ async def mark_reject(
     row = result.scalar_one_or_none()
     if not row:
         raise NotFoundError("TaskResult", result_id)
-    row.is_passed = not row.is_passed
+    row.is_passed = False
     await db.commit()
     return {"id": row.id, "is_passed": row.is_passed}

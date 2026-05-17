@@ -45,7 +45,7 @@ async def create_export_package(db: AsyncSession, export_task: ExportTask) -> st
         .where(TaskResult.task_instance_id == instance_id)
         .options(selectinload(TaskResult.llm_analysis), selectinload(TaskResult.download_result))
     )
-    task_results = result.unique().scalars().all()
+    task_results = result_rows.unique().scalars().all()
 
     os.makedirs(settings.exports_dir, exist_ok=True)
     tmp_dir = tempfile.mkdtemp(prefix=f"export_{instance.instance_no}_")

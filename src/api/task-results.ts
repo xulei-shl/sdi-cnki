@@ -16,19 +16,19 @@ export interface TaskResultQuery {
   sort_order?: 'asc' | 'desc'
 }
 
-export function getTaskResults(params: TaskResultQuery) {
-  return http.get<PaginatedResponse<TaskResult>>('/task-results', { params })
+export function getTaskResults(instanceId: number, params: Omit<TaskResultQuery, 'instance_id'>) {
+  return http.get<PaginatedResponse<TaskResult>>(`/task-instances/${instanceId}/results`, { params })
 }
 
-export function markPass(id: number) {
-  return http.put(`/task-results/${id}/pass`)
+export function markPass(id: number, isPassed: boolean = true) {
+  return http.put(`/task-results/${id}/pass`, { is_passed: isPassed })
 }
 
 export function markReject(id: number) {
   return http.put(`/task-results/${id}/reject`)
 }
 
-export function batchUpdateResults(instanceId: number, data: { ids: number[]; action: 'pass' | 'reject' }) {
+export function batchUpdateResults(instanceId: number, data: { result_ids: number[]; action: 'pass' | 'reject' }) {
   return http.post(`/task-instances/${instanceId}/results/batch-update`, data)
 }
 

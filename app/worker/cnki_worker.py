@@ -113,7 +113,7 @@ async def process_search_results(
             title_normalized=rec.get("title_normalized", ""),
             source_journal_normalized=rec.get("source_journal_normalized", ""),
             is_duplicate=rec.get("is_duplicate", False),
-            is_passed=rec.get("is_passed", False),
+            is_passed=rec.get("is_passed"),
         )
         db.add(task_result)
         inserted += 1
