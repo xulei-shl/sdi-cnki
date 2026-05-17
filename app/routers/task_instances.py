@@ -391,6 +391,38 @@ async def start_download(
     return {"message": "Download queued"}
 
 
+@router.post("/{instance_id}/retry-analysis")
+async def retry_llm_analysis(
+    instance_id: int,
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(TaskInstance).where(TaskInstance.id == instance_id)
+    result = await db.execute(stmt)
+    inst = result.scalar_one_or_none()
+    if not inst:
+        raise NotFoundError("TaskInstance", instance_id)
+    if current_user.role != "admin" and inst.creator_id != current_user.id:
+        from app.utils.exceptions import PermissionDeniedError
+        raise PermissionDeniedError()
+    if inst.status in ("pending", "search_queued", "running", "search_completed", "analyzing"):
+        raise ValidationError(f"Cannot retry analysis in status: {inst.status}")
+
+    from app.task_queue.crud import TaskQueueService
+    svc = TaskQueueService(db)
+    await svc.enqueue(
+        queue_type="llm",
+        task_type="llm_analysis",
+        params_json=json.dumps({"instance_id": instance_id, "instance_no": inst.instance_no, "retry_failed_only": True}),
+        task_key=f"llm_retry_{inst.instance_no}",
+    )
+    inst.status = "analyzing"
+    await db.commit()
+    from app.routers.sse import broadcast_event
+    await broadcast_event(instance_id, "task.progress", {"status": "analyzing", "analyzed": 0, "total": 0})
+    return {"message": "LLM retry analysis queued"}
+
+
 @router.post("/{instance_id}/run")
 async def run_task_instance(
     instance_id: int,

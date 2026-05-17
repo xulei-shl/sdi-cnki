@@ -185,6 +185,7 @@ async def run_cnki_search(
 
         from app.services.wecom_notifier import send_notification
         await send_notification(db, {
+            "stage": "检索",
             "meta_task_name": instance.meta_task.name if instance.meta_task else "",
             "username": instance.creator.username if instance.creator else "",
             "instance_no": instance.instance_no,
@@ -222,4 +223,16 @@ async def run_cnki_search(
         instance.status = "failed"
         instance.error_message = str(e)[:500]
         await db.commit()
+        from app.services.wecom_notifier import send_notification
+        await send_notification(db, {
+            "stage": "检索",
+            "meta_task_name": instance.meta_task.name if instance.meta_task else "",
+            "username": instance.creator.username if instance.creator else "",
+            "instance_no": instance.instance_no,
+            "status": "failed",
+            "error_message": str(e)[:500],
+            "started_at": instance.started_at.isoformat() if instance.started_at else "",
+            "completed_at": timezone.now().isoformat(),
+            "stats": {},
+        })
         await svc.fail(item_id, str(e)[:500])

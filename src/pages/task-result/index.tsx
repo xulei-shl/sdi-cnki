@@ -11,7 +11,7 @@ import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detai
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { getTaskInstance } from '@/api/task-instances'
-import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus } from '@/api/task-results'
+import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
 import { Check } from 'lucide-react'
 import type { TaskInstance, TaskStatus } from '@/types'
@@ -112,6 +112,7 @@ export default function TaskResultPage() {
   const [includeDuplicate, setIncludeDuplicate] = useState(false)
 
   const [exporting, setExporting] = useState(false)
+  const [retrying, setRetrying] = useState(false)
   const sseRef = useRef<SseClient | null>(null)
   const getAuthToken = () => localStorage.getItem('access_token') || ''
 
@@ -153,14 +154,24 @@ export default function TaskResultPage() {
       if (data.status === 'analyzing') {
         setAnalyzeProgress({ active: true, analyzed: data.analyzed ?? 0, total: data.total ?? 0, failed: data.failed ?? 0 })
       } else if (['search_completed', 'analyzing_completed', 'completed'].includes(data.status)) {
+        setRetrying(false)
+        setAnalyzeProgress({ active: false, analyzed: 0, total: 0, failed: 0 })
         fetchInstance(); fetchResults()
       }
     })
     sse.on('download.progress', (data: any) => {
       setDownloadProgress({ active: true, success: data.success ?? 0, failed: data.failed ?? 0, skipped: data.skipped ?? 0, total: data.total ?? 0 })
     })
-    sse.on('task.completed', () => { fetchInstance(); fetchResults() })
-    sse.on('task.failed', () => { fetchInstance(); fetchResults() })
+    sse.on('task.completed', () => {
+      setRetrying(false)
+      setAnalyzeProgress({ active: false, analyzed: 0, total: 0, failed: 0 })
+      fetchInstance(); fetchResults()
+    })
+    sse.on('task.failed', () => {
+      setRetrying(false)
+      setAnalyzeProgress({ active: false, analyzed: 0, total: 0, failed: 0 })
+      fetchInstance(); fetchResults()
+    })
     sse.on('export.completed', (data: any) => {
       setExporting(false)
       if (data?.export_id) window.open(`/api/v1/exports/${data.export_id}/download`, '_blank')
@@ -238,6 +249,21 @@ export default function TaskResultPage() {
       await startDownload(instanceId)
       toast.success('下载任务已加入队列')
     } catch { toast.error('启动下载失败') }
+  }
+
+  const handleRetryAnalysis = async () => {
+    if (retrying) return
+    setRetrying(true)
+    setAnalyzeProgress({ active: true, analyzed: 0, total: 0, failed: 0 })
+    try {
+      await retryAnalysis(instanceId)
+      toast.success('LLM 分析任务已加入队列')
+      fetchInstance()
+    } catch {
+      toast.error('启动 LLM 分析失败')
+      setAnalyzeProgress({ active: false, analyzed: 0, total: 0, failed: 0 })
+      setRetrying(false)
+    }
   }
 
   const handleExport = async () => {
@@ -374,6 +400,11 @@ export default function TaskResultPage() {
               {['analyzing_completed', 'completed', 'failed'].includes(instance?.status || '') && (
                 <Button size="sm" variant="outline" onClick={handleExport} disabled={exporting}>
                   {exporting ? '导出中...' : '结果导出'}
+                </Button>
+              )}
+              {['analyzing_completed', 'ready_for_download', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
+                <Button size="sm" variant="outline" onClick={handleRetryAnalysis} disabled={retrying}>
+                  {retrying ? '分析中...' : 'LLM 分析'}
                 </Button>
               )}
               {['analyzing_completed', 'ready_for_download', 'downloading'].includes(instance?.status || '') && (

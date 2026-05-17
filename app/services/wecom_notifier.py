@@ -29,12 +29,13 @@ def _build_markdown(instance_data: dict) -> str:
     """构建企业微信 Markdown 消息。"""
     status = instance_data.get("status", "")
     is_failure = status == "failed"
+    stage = instance_data.get("stage", "任务执行")
     status_icon = "❌" if is_failure else "✅"
     status_text = "失败" if is_failure else "完成"
     stats = instance_data.get("stats", {})
 
     parts = [
-        f"## {'📋'} 任务执行{'失败' if is_failure else '完成'}通知\n",
+        f"## {'📋'} {stage}{'失败' if is_failure else '完成'}通知\n",
         f"**任务名称**: {instance_data.get('meta_task_name', '-')}",
         f"**执行用户**: {instance_data.get('username', '-')}",
         f"**任务编号**: {instance_data.get('instance_no', '-')}",

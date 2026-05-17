@@ -32,6 +32,10 @@ export function batchUpdateResults(instanceId: number, data: { result_ids: numbe
   return http.post(`/task-instances/${instanceId}/results/batch-update`, data)
 }
 
+export function retryAnalysis(instanceId: number) {
+  return http.post(`/task-instances/${instanceId}/retry-analysis`)
+}
+
 export function startDownload(instanceId: number) {
   return http.post(`/task-instances/${instanceId}/download`)
 }
