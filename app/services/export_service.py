@@ -90,7 +90,7 @@ def _generate_results_xlsx(task_results: list[TaskResult], output_path: str) -> 
         "题名", "作者", "作者单位", "文献来源", "第一责任人",
         "关键词", "摘要", "发表时间", "基金", "出版年份",
         "卷", "期", "页码", "中图分类号", "ISSN", "URL", "DOI",
-        "参考格式", "是否重复", "审核状态", "下载状态",
+        "参考格式", "是否重复", "审核状态", "下载状态", "PDF文件",
         "相关性评分", "相关性等级", "是否相关", "分析理由",
     ]
     header_font = Font(bold=True)
@@ -136,12 +136,17 @@ def _generate_results_xlsx(task_results: list[TaskResult], output_path: str) -> 
         else:
             ws.cell(row=row_idx, column=20, value="未审")
         ws.cell(row=row_idx, column=21, value=download_status)
+        pdf_rel_path = None
+        if tr.download_result and tr.download_result.pdf_path:
+            _, ext = os.path.splitext(tr.download_result.pdf_path)
+            pdf_rel_path = f"pdfs/{tr.id}{ext}" if ext else None
+        ws.cell(row=row_idx, column=22, value=pdf_rel_path)
         p = parsed or {}
-        ws.cell(row=row_idx, column=22, value=p.get("relevance_score"))
-        ws.cell(row=row_idx, column=23, value=p.get("relevance_level"))
+        ws.cell(row=row_idx, column=23, value=p.get("relevance_score"))
+        ws.cell(row=row_idx, column=24, value=p.get("relevance_level"))
         is_rel = p.get("is_relevant")
-        ws.cell(row=row_idx, column=24, value=is_rel if is_rel is not None else p.get("is_target_topic"))
-        ws.cell(row=row_idx, column=25, value=p.get("reasoning"))
+        ws.cell(row=row_idx, column=25, value=is_rel if is_rel is not None else p.get("is_target_topic"))
+        ws.cell(row=row_idx, column=26, value=p.get("reasoning"))
 
     wb.save(output_path)
 
