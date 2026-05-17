@@ -283,7 +283,7 @@ export default function TaskInstancePage() {
                         )}
                         {['analyzing_completed', 'completed', 'failed'].includes(inst.status) && (
                           <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleExport(e, inst)} disabled={exportingId === inst.id}>
-                            {exportingId === inst.id ? '导出中...' : '结果导出'}
+                            {exportingId === inst.id ? '导出中...' : '导出'}
                           </Button>
                         )}
                       </div>
