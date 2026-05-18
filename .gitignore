@@ -97,3 +97,4 @@ temp/
 /data/cookies
 /data/exports
 /data/uploads
+*.db
