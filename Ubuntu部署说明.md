@@ -46,20 +46,18 @@ npm run build
 # 5. 确认数据目录
 mkdir -p data
 
-# 6. 数据库 & 默认管理员（首次启动自动完成，亦可手动）
+# 6. 初始化数据库（首次启动自动创建表 & 默认管理员）
 python -c "
 import asyncio
 from app.database import init_db, engine
-from app.dependencies import hash_password
-from sqlalchemy import text
 async def s():
     await init_db()
-    async with engine.begin() as c:
-        await c.execute(text(\"INSERT OR IGNORE INTO users (username, password_hash, email, role, is_active) VALUES ('admin', :pw, 'admin@example.com', 'admin', 1)\"), {'pw': hash_password('admin123')})
     print('DB ready')
     await engine.dispose()
 asyncio.run(s())
 "
+
+# 默认管理员账号：admin / admin123（由 init_db() 自动创建，仅空库时执行一次）
 ```
 
 ## 防火墙

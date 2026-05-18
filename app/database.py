@@ -45,7 +45,24 @@ async def init_db():
         from app.models import Base
         await conn.run_sync(Base.metadata.create_all)
         await _migrate_system_prompts(conn)
+        await _seed_default_admin(conn)
         await _seed_default_configs(conn)
+
+
+async def _seed_default_admin(conn):
+    """插入默认管理员（幂等，仅空表时执行）。"""
+    from sqlalchemy import text as sql_text
+    result = await conn.execute(sql_text("SELECT COUNT(*) FROM users"))
+    if result.scalar() > 0:
+        return
+    from app.dependencies import hash_password
+    await conn.execute(
+        sql_text(
+            "INSERT INTO users (username, password_hash, email, role, is_active, created_at, updated_at) "
+            "VALUES ('admin', :pw, 'admin@example.com', 'admin', 1, datetime('now', 'localtime'), datetime('now', 'localtime'))"
+        ),
+        {"pw": hash_password("admin123")},
+    )
 
 
 async def _seed_default_configs(conn):
