@@ -12,7 +12,7 @@ import { Separator } from '@/components/ui/separator'
 import { AxiosError } from 'axios'
 import { toast } from 'sonner'
 import { getTaskInstance, importExcelResults } from '@/api/task-instances'
-import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis, downloadExportFile } from '@/api/task-results'
+import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis, downloadExportFile, retryDownload } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
 import { Check, ChevronLeft, ChevronRight, ChevronDown, X } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -260,6 +260,31 @@ export default function TaskResultPage() {
       toast.success('已拒绝')
       fetchResults()
     } catch { toast.error('操作失败') }
+  }
+
+  const [downloadingIds, setDownloadingIds] = useState<Set<number>>(new Set())
+
+  const handleSingleDownload = async (row: any) => {
+    if (downloadingIds.has(row.id)) return
+    setDownloadingIds(prev => new Set(prev).add(row.id))
+    try {
+      const res = await retryDownload(instanceId, row.id)
+      const status = res.data.download_status
+      if (status === 'completed') {
+        toast.success('下载成功')
+      } else {
+        toast.error('下载失败')
+      }
+      fetchResults()
+    } catch {
+      toast.error('下载请求失败')
+    } finally {
+      setDownloadingIds(prev => {
+        const next = new Set(prev)
+        next.delete(row.id)
+        return next
+      })
+    }
   }
 
   const goToPrev = () => {
@@ -710,6 +735,11 @@ export default function TaskResultPage() {
                           </TableCell>
                           <TableCell onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                             <div className="flex justify-end gap-3">
+                              {row.is_passed === true && row.download?.download_status !== 'completed' && row.download?.download_status !== 'downloading' && (
+                                <Button variant="link" className="h-auto p-0 font-normal text-amber-600 hover:text-amber-700" disabled={downloadingIds.has(row.id)} onClick={() => handleSingleDownload(row)}>
+                                  {downloadingIds.has(row.id) ? '下载中...' : '下载'}
+                                </Button>
+                              )}
                               <Button variant="link" className="h-auto p-0 font-normal" onClick={() => handleSinglePass(row)}>通过</Button>
                               <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={() => handleSingleReject(row)}>拒绝</Button>
                             </div>
@@ -833,6 +863,11 @@ export default function TaskResultPage() {
                 <DetailRow label="文件大小" valueAlign="left">
                   {activeResult.download?.file_size ? `${activeResult.download.file_size} KB` : '-'}
                 </DetailRow>
+                {activeResult.download?.download_status === 'failed' && activeResult.download?.error_message && (
+                  <DetailRow label="失败原因" layout="vertical">
+                    <span className="text-destructive text-sm">{activeResult.download.error_message}</span>
+                  </DetailRow>
+                )}
               </DetailSection>
             </>
           )}

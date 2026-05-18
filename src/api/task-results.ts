@@ -41,6 +41,12 @@ export function startDownload(instanceId: number) {
   return http.post(`/task-instances/${instanceId}/download`)
 }
 
+export function retryDownload(instanceId: number, resultId: number) {
+  return http.post<{ download_status: string; pdf_path: string | null; file_size: number | null }>(
+    `/task-instances/${instanceId}/results/${resultId}/retry-download`
+  )
+}
+
 export function getDownloadProgress(instanceId: number) {
   return http.get(`/task-instances/${instanceId}/download-progress`)
 }

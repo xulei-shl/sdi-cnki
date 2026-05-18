@@ -7,23 +7,32 @@ from typing import Optional
 from app.utils import timezone
 from app.config import get_settings
 
+settings = get_settings()
+
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select, func, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+import asyncio
+
 from app.database import get_db
+from app.models.download_result import DownloadResult
 from app.models.meta_task import MetaTask
 from app.models.task_instance import TaskInstance
 from app.models.task_result import TaskResult
 from app.utils.exceptions import NotFoundError, ValidationError
+from app.utils.logging import get_logger as _get_logger
 from app.utils.oplog import log_operation
 from app.routers import get_current_user_from_header
 from app.services.excel_parser import parse_excel_to_records
 from app.services.dedup_service import batch_check_and_mark
 
 router = APIRouter()
+
+# 实例级下载串行锁，同一实例内的单条重试下载逐条执行
+_instance_dl_locks: dict[int, asyncio.Lock] = {}
 
 
 async def _create_instance(db: AsyncSession, task: MetaTask, user, auto_run: bool = True) -> TaskInstance:
@@ -224,6 +233,8 @@ async def get_task_instance(
 
     download_success = 0
     download_failed = 0
+    download_skipped = 0
+    download_pending = 0
     for row in (
         await db.execute(
             select(
@@ -238,6 +249,10 @@ async def get_task_instance(
             download_success = row[1]
         elif row[0] == "failed":
             download_failed = row[1]
+        elif row[0] == "skipped":
+            download_skipped = row[1]
+        elif row[0] == "pending":
+            download_pending = row[1]
 
     return {
         "id": inst.id,
@@ -268,6 +283,8 @@ async def get_task_instance(
         "manual_review_rejected_count": manual_rejected,
         "download_success_count": download_success,
         "download_failed_count": download_failed,
+        "download_skipped_count": download_skipped,
+        "download_pending_count": download_pending,
     }
 
 
@@ -440,6 +457,7 @@ async def list_instance_results(
                 "download_status": row.download_result.download_status if row.download_result else "pending",
                 "pdf_path": row.download_result.pdf_path if row.download_result else None,
                 "file_size": row.download_result.file_size if row.download_result else None,
+                "error_message": row.download_result.error_message if row.download_result else None,
             } if row.download_result else None,
         })
     return {"items": items, "total": count.scalar(), "page": page, "page_size": page_size}
@@ -495,6 +513,113 @@ async def start_download(
     from app.routers.sse import broadcast_event
     await broadcast_event(instance_id, "task.progress", {"status": "download_queued"})
     return {"message": "Download queued"}
+
+
+@router.post("/{instance_id}/results/{result_id}/retry-download")
+async def retry_single_download(
+    instance_id: int,
+    result_id: int,
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(TaskInstance).where(TaskInstance.id == instance_id)
+    result = await db.execute(stmt)
+    inst = result.scalar_one_or_none()
+    if not inst:
+        raise NotFoundError("TaskInstance", instance_id)
+    if current_user.role != "admin" and inst.creator_id != current_user.id:
+        from app.utils.exceptions import PermissionDeniedError
+        raise PermissionDeniedError()
+
+    tr = await db.execute(
+        select(TaskResult).where(TaskResult.id == result_id, TaskResult.task_instance_id == instance_id)
+    )
+    task_result = tr.scalar_one_or_none()
+    if not task_result:
+        raise NotFoundError("TaskResult", result_id)
+    if task_result.is_passed != True:
+        raise ValidationError("只能对已通过人工审核的记录重试下载")
+    if task_result.is_duplicate:
+        raise ValidationError("重复记录无法下载")
+    if not task_result.original_url:
+        raise ValidationError("原始链接为空，无法下载")
+
+    existing = await db.execute(
+        select(DownloadResult).where(DownloadResult.task_result_id == result_id)
+    )
+    download_result = existing.scalar_one_or_none()
+
+    output_dir = Path(settings.downloads_dir) / inst.instance_no
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    from app.services.pdf_downloader import download_pdf
+
+    _log = _get_logger("retry_download")
+
+    # 同一实例内的单条下载串行执行，避免多个浏览器同时跑
+    if instance_id not in _instance_dl_locks:
+        _instance_dl_locks[instance_id] = asyncio.Lock()
+
+    async with _instance_dl_locks[instance_id]:
+        try:
+            pdf_path = await asyncio.to_thread(
+                download_pdf,
+                article_title=task_result.title,
+                original_url=task_result.original_url,
+                output_dir=output_dir,
+            )
+
+            if download_result:
+                download_result.download_status = "completed" if pdf_path else "failed"
+                download_result.pdf_path = str(pdf_path) if pdf_path else ""
+                download_result.file_size = Path(pdf_path).stat().st_size if pdf_path else 0
+                download_result.error_message = "" if pdf_path else "单条重试下载失败"
+                download_result.retry_count = (download_result.retry_count or 0) + 1
+            else:
+                download_result = DownloadResult(
+                    task_result_id=result_id,
+                    task_instance_id=instance_id,
+                    download_status="completed" if pdf_path else "failed",
+                    pdf_path=str(pdf_path) if pdf_path else "",
+                    file_size=Path(pdf_path).stat().st_size if pdf_path else 0,
+                    error_message="" if pdf_path else "单条重试下载失败",
+                    retry_count=1,
+                )
+                db.add(download_result)
+
+            if pdf_path:
+                task_result.local_pdf_path = str(pdf_path)
+
+            await db.commit()
+            return {
+                "id": download_result.id,
+                "download_status": download_result.download_status,
+                "pdf_path": download_result.pdf_path or None,
+                "file_size": download_result.file_size or None,
+            }
+
+        except Exception as e:
+            _log.error(f"单条重试下载失败 [result_id={result_id}]: {e}", exc_info=True)
+            if download_result:
+                download_result.download_status = "failed"
+                download_result.error_message = str(e)[:500]
+                download_result.retry_count = (download_result.retry_count or 0) + 1
+            else:
+                download_result = DownloadResult(
+                    task_result_id=result_id,
+                    task_instance_id=instance_id,
+                    download_status="failed",
+                    error_message=str(e)[:500],
+                    retry_count=1,
+                )
+                db.add(download_result)
+            await db.commit()
+            return {
+                "id": download_result.id,
+                "download_status": "failed",
+                "pdf_path": None,
+                "file_size": None,
+            }
 
 
 @router.post("/{instance_id}/retry-analysis")

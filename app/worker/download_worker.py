@@ -48,8 +48,6 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
             TaskResult.task_instance_id == instance_id,
             TaskResult.is_duplicate == False,
             TaskResult.is_passed == True,
-            TaskResult.original_url.isnot(None),
-            TaskResult.original_url != "",
         )
         rec_result = await db.execute(rec_stmt)
         records = rec_result.scalars().all()
@@ -74,7 +72,6 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
                 try:
                     pdf_path = download_pdf(
                         article_title=rec.title,
-                        original_url=rec.original_url or "",
                         output_dir=out_dir,
                     )
                     if pdf_path:

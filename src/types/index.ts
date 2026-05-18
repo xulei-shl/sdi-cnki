@@ -74,6 +74,8 @@ export interface TaskInstance {
   manual_review_rejected_count?: number
   download_success_count?: number
   download_failed_count?: number
+  download_skipped_count?: number
+  download_pending_count?: number
   error_message: string | null
   started_at: string | null
   search_completed_at: string | null

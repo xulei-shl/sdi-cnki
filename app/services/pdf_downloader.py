@@ -16,7 +16,6 @@ from .keyword_normalizer import is_match
 
 def download_pdf(
     article_title: str,
-    original_url: str,
     output_dir: str | Path,
     page=None,
     max_retries_round2: int = 1,
@@ -25,7 +24,6 @@ def download_pdf(
 
     Args:
         article_title: 文章题名（用于搜索和校验）
-        original_url: CNKI 原文链接（CNKI 来源时直接导航）
         output_dir: PDF 保存目录
         page: 外部浏览器页面（None 时自建）
         max_retries_round2: 第二轮重试次数

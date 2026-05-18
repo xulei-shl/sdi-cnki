@@ -1,5 +1,12 @@
 # 经验教训
 
+## 2026-05-18: 下载步骤中无 URL 的已通过记录被静默跳过
+
+### Bug: 下载工作线程过滤条件导致 4 条记录永久"未下载"
+- **根因**: `app/worker/download_worker.py:47-53` 的 SQL 查询额外过滤了 `original_url IS NOT NULL AND original_url != ""`，导致已通过人工审核但无原始链接的记录被彻底忽略，不会创建任何 `DownloadResult` 记录，永远停留在"未下载"状态。
+- **教训**: 下载工作线程应处理**所有** `is_passed=True` 的记录，无 URL 的情况应在业务逻辑层（`_process_sync` 循环内）标记为 `skipped`，而非在 SQL 层静默过滤。这样所有已通过记录都会有一条 `DownloadResult` 记录，状态可追溯。
+- **改进了 3 处**: (1) 下载工作线程移除 SQL 层的 `original_url` 过滤，在循环内处理无 URL 情况（标记 skipped）; (2) API 统计增加 `skipped`/`pending` 计数; (3) 前端任务实例列表展示跳过的记录数。
+
 ## 2026-05-17: T20260517002 任务实例结果显示异常
 
 ### Bug 1: 前端调用错误 API 端点导致"暂无数据"
@@ -41,6 +48,18 @@
 - **重构**: 新增 `_read_raw_data()` 函数作为格式检测层，`_read_and_sanitize()` 不再关心文件格式
 - **效果**: 后续扩展 `.csv` 等格式只需改 `_read_raw_data()` 一处，不涉及其余业务逻辑
 - **教训**: 文件解析的入口点应抽象出"原始读取"与"结构化清洗"两层，避免路由/业务代码关心底层格式
+
+## 2026-05-18: 下载遗留记录批量跳过 + 单条重试下载功能
+
+### Bug: 下载工作线程过滤条件导致已通过记录静默跳过
+- **根因**: `app/worker/download_worker.py:47-53` SQL 查询额外过滤了 `original_url IS NOT NULL`，已通过但无链接的记录被彻底忽略，`DownloadResult` 永远不创建，显示为"未下载"
+- **修复**: 移除 SQL 层过滤，在业务循环内处理无 URL 情况，标记为 `skipped`
+
+### Feature: 单条重试下载
+- **需求**: task-result 页面，已通过人工审核但下载状态为"未下载"/"失败"/"跳过"的记录可逐条重试下载
+- **设计**: 新增 `POST /{instance_id}/results/{result_id}/retry-download` 端点，同步执行单条 PDF 下载，创建/更新 `DownloadResult`，不修改实例状态
+- **导出兼容**: 导出模块读取 `DownloadResult.pdf_path`，单条下载成功后导出时自动包含该 PDF 及 Excel 中 PDF 文件列路径
+- **按钮**: 每条记录操作列新增"下载"按钮，与原有"PDF 下载"按钮并存：前者是单条重试（下载完成后可见），后者是批量发起（下载前可见）
 
 ### 经验 3: 前端 accept 属性与后端验证应保持同步
 - **问题**: 前端 `accept=".xlsx"` 与后端 `endswith(".xlsx")` 均在两处维护

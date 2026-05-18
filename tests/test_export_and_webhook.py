@@ -113,8 +113,11 @@ def test_generate_results_xlsx():
     ws = wb["检索结果"]
     assert ws.cell(1, 1).value == "题名"
     assert ws.cell(2, 1).value == "测试文章标题"
-    assert ws.cell(2, 22).value == 8  # relevance_score
-    assert ws.cell(2, 23).value == "High"  # relevance_level
+    assert ws.cell(2, 22).value == "pdfs/1.pdf"  # PDF文件
+    assert ws.cell(2, 23).value == 8  # 相关性评分
+    assert ws.cell(2, 24).value == "High"  # 相关性等级
+    assert ws.cell(2, 25).value is True  # 是否相关
+    assert ws.cell(2, 26).value == "test"  # 分析理由
     os.unlink(tmp)
     print("  OK  _generate_results_xlsx")
 
