@@ -53,7 +53,7 @@ export default function MetaTaskPage() {
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
 
-  useHiagentWidget('d84ia1b7hq5hrmisfr70')
+  useHiagentWidget(import.meta.env.VITE_HIAGENT_APP_KEY)
 
   const handleRowClick = async (taskId: number) => {
     const existing = tasks.find(t => t.id === taskId)

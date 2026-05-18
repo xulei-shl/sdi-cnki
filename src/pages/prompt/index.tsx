@@ -54,7 +54,7 @@ export default function PromptPage() {
 
   useEffect(() => { fetchData() }, [])
 
-  useHiagentWidget('d858cl5jqihd1jfiqa40')
+  useHiagentWidget(import.meta.env.VITE_HIAGENT_PROMPT_APP_KEY)
 
   const openCreate = async () => {
     setEditItem(null)

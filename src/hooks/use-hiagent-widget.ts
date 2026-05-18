@@ -1,39 +1,35 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 
-export function useHiagentWidget(appKey: string) {
-  const instanceRef = useRef<any>(null)
+const SDK_CLASSES = [
+  'hiagent-bubble-container',
+  'hiagent-bubble',
+  'hiagent-bubble-image',
+  'hiagent-bubble-tooltip',
+  'hiagent-bubble-tooltip-text',
+  'hiagent-bubble-tooltip-arrow',
+  'hiagent-conversation',
+  'hiagent-conversation-iframe',
+]
 
+export function useHiagentWidget(appKey: string, baseUrl = 'https://hiagent.library.sh.cn') {
   useEffect(() => {
-    const script = document.createElement('script')
-    script.src = 'https://hiagent.library.sh.cn/resources/product/llm/public/sdk/embedLite.js'
-    script.onload = () => {
+    function init() {
       try {
-        instanceRef.current = new (window as any).HiagentWebSDK.WebLiteClient({
-          appKey,
-          baseUrl: 'https://hiagent.library.sh.cn',
-        })
+        new (window as any).HiagentWebSDK.WebLiteClient({ appKey, baseUrl })
       } catch (err) {
-        console.error('Hiagent widget init failed', err)
+        console.error('Hiagent init failed:', err)
       }
     }
-    script.onerror = () => {
-      console.error('Hiagent SDK script load failed')
+    if ((window as any).HiagentWebSDK?.WebLiteClient) {
+      init()
     }
-    document.body.appendChild(script)
-
     return () => {
-      const inst = instanceRef.current
-      if (inst) {
-        try {
-          ;(inst as any).destroy?.()
-          ;(inst as any).dispose?.()
-          ;(inst as any).cleanup?.()
-          ;(inst as any).unmount?.()
-        } catch { /* ignore */ }
-      }
-      document.querySelectorAll('[class*="hiagent"],[class*="Hiagent"],[id*="hiagent"],[id*="Hiagent"]')
-        .forEach(el => el.remove())
-      if (script.parentNode) script.parentNode.removeChild(script)
+      SDK_CLASSES.forEach(cls => {
+        document.querySelectorAll(`.${cls}`).forEach(el => el.remove())
+      })
+      document.querySelectorAll('style').forEach(el => {
+        if (el.textContent?.includes('hiagent-bubble')) el.remove()
+      })
     }
-  }, [appKey])
+  }, [appKey, baseUrl])
 }

@@ -59,6 +59,48 @@ API 文档：http://localhost:8456/docs
 - **实时推送**：SSE 进度（检索/分析/下载），企业微信 Webhook 通知
 - **权限控制**：Admin/User 双角色，动态路由 + 按钮级鉴权
 
+## Hiagent AI 助手浮窗
+
+页面右下角的 AI 助手浮窗基于 [Hiagent Web SDK](https://hiagent.library.sh.cn) 嵌入，支持两种方式：
+
+### 方式 A：全局嵌入（所有页面）
+
+适用于全站使用同一 hiagent 实例的场景。
+
+```html
+<!-- index.html → body 末尾 -->
+<script src="https://hiagent.library.sh.cn/resources/product/llm/public/sdk/embedLite.js"></script>
+<script>
+  new HiagentWebSDK.WebLiteClient({ appKey: 'your-key', baseUrl: 'https://hiagent.library.sh.cn' })
+</script>
+```
+
+SDK + 实例化均在 `index.html` 中以原生 `<script>` 同步加载，简单可靠。
+
+### 方式 B：页面级嵌入（不同页面不同 appKey）
+
+适用于各页面需挂载不同 hiagent 实例的场景。
+
+**1. SDK 加载层 — `index.html`**
+
+```html
+<script src="https://hiagent.library.sh.cn/resources/product/llm/public/sdk/embedLite.js"></script>
+```
+
+SDK 必须在页面解析阶段以原生 `<script>` 同步加载，否则 `WebLiteClient` 构造函数内部 `fetchAgentConfig()` 的执行上下文会错乱，浮窗无法渲染/交互。
+
+**2. 实例化层 — 页面组件**
+
+```typescript
+useHiagentWidget('your-app-key')
+```
+
+通过 `src/hooks/use-hiagent-widget.ts` 的 `useHiagentWidget(appKey)` 创建/销毁实例。SDK 已由 `index.html` 加载，hook 仅做直接调用 + cleanup 清理 SDK 生成的 DOM 节点。不调用的页面不产生浮窗。
+
+### 历史
+
+尝试过纯 `useEffect` 动态加载 script + 实例化，但 SDK 构造函数内部的跨域 `fetch` 依赖主线程同步执行上下文，动态执行时序不一致导致请求失败、浮窗不出现。最终方案：原生 `<script>` 只加载 SDK，页面组件通过 hook 控制实例化时机与 appKey。
+
 ## 项目结构
 
 ```
