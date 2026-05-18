@@ -541,8 +541,6 @@ async def retry_single_download(
         raise ValidationError("只能对已通过人工审核的记录重试下载")
     if task_result.is_duplicate:
         raise ValidationError("重复记录无法下载")
-    if not task_result.original_url:
-        raise ValidationError("原始链接为空，无法下载")
 
     existing = await db.execute(
         select(DownloadResult).where(DownloadResult.task_result_id == result_id)
@@ -565,7 +563,6 @@ async def retry_single_download(
             pdf_path = await asyncio.to_thread(
                 download_pdf,
                 article_title=task_result.title,
-                original_url=task_result.original_url,
                 output_dir=output_dir,
             )
 
