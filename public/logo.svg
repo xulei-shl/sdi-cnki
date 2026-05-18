@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" fill="none">
+  <!-- SDI-CNKI Logo: Academic Flow (B) -->
+  <g id="logo-icon">
+    <!-- Top Layer -->
+    <path d="M12 14C12 11.7909 13.7909 10 16 10H32C34.2091 10 36 11.7909 36 13.9118V13.9118C36 14.8879 35.3235 15.7485 34.3732 15.9691L13.1491 21.0558C12.4746 21.2173 12 21.7584 12 22.451V22.451" stroke="#292524" stroke-width="2.5" stroke-linecap="round"/>
+    <!-- Middle 'S' Wave -->
+    <path d="M12 24.5C12 24.5 14 22 24 22C34 22 36 29 36 29C36 29 34 32.5 24 32.5C14 32.5 12 29 12 29" stroke="#292524" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Bottom Layer -->
+    <path d="M36 34.5C36 36.7091 34.2091 38.5 32 38.5H16C13.7909 38.5 12 36.7091 12 34.5V34.5C12 33.6111 12.5510 32.8122 13.3855 32.5029L34.1206 24.8143C35.2016 24.4172 36 23.4079 36 22.2571V22.2571" stroke="#44403c" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+  </g>
+  <g id="logo-text">
+    <!-- Note: Plus Jakarta Sans is assumed as system font or imported in index.css -->
+    <text x="48" y="32" font-family="Plus Jakarta Sans, sans-serif" font-size="20" font-weight="700" letter-spacing="-0.02em" fill="#1c1917">SDI<tspan fill="#78716c">-</tspan>CNKI</text>
+  </g>
+</svg>
