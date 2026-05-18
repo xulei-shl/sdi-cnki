@@ -618,18 +618,6 @@ export default function TaskResultPage() {
 
                 {/* Batch Actions */}
                 <div className="flex items-center gap-3">
-                  {selectedIds.size > 0 && (
-                    <>
-                      <span className="text-sm font-medium text-primary">已选中 {selectedIds.size} 项</span>
-                      <button
-                        onClick={() => setSelectedIds(new Set())}
-                        className="p-1 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors text-muted-foreground"
-                        title="清空选择"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </>
-                  )}
                   <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchPass}>批量通过</Button>
                   <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchReject}>批量拒绝</Button>
                   {['analyzing_completed', 'downloading'].includes(instance?.status || '') && (
@@ -670,6 +658,29 @@ export default function TaskResultPage() {
 
               {/* Table */}
               <div className="flex-1 overflow-auto px-8 py-6">
+                {!loading && (
+                  <div className="pb-3 flex items-center gap-4">
+                    <span className="text-sm text-muted-foreground tabular-nums">
+                      {total > 0 ? (
+                        <>共 <span className="font-semibold text-foreground">{total}</span> 条结果</>
+                      ) : (
+                        '未找到匹配的结果'
+                      )}
+                    </span>
+                    {selectedIds.size > 0 && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-medium text-primary">已选中 {selectedIds.size} 项</span>
+                        <button
+                          onClick={() => setSelectedIds(new Set())}
+                          className="p-1 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors text-muted-foreground"
+                          title="清空选择"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <Table>
                   <TableHeader>
                     <TableRow>
