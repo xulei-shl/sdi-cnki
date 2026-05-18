@@ -28,3 +28,21 @@
 - **根因**: `app/worker/llm_worker.py` 中 `asyncio.gather` 并发调用多个 `_process_one`，但所有协程共享同一个 `db: AsyncSession`。SQLite + aiosqlite 不支持单连接并发操作，触发 `This session is provisioning a new connection; concurrent operations are not permitted`。
 - **教训**: 同一个 `AsyncSession` 不能被多个协程同时使用（尤其是 SQLite 场景）。应将 DB 操作（串行）与 IO 密集型操作（并发）分离。
 - **修复**: 将原 `_process_one` 拆分为 `_call_llm`（纯 LLM HTTP 调用，可并发）和 `_write_analysis_result`（DB 写入，在主循环中串行执行）。
+
+## 2026-05-18: Excel 导入功能 — CNKI 的 .xls 并非真实 Excel
+
+### 经验 1: CNKI 导出的 .xls 是 HTML 表格伪装
+- **现象**: `pd.read_excel(engine="openpyxl")` 打开 CNKI 下载的 `.xls` 文件时失败
+- **根因**: CNKI 导出功能生成的是 `<html>` 格式的表格文件，仅后缀名为 `.xls`，并非真实二进制 Excel
+- **处理**: 先尝试 `openpyxl` 解析，失败后用 `pd.read_html()` 提取 HTML 中的 `<table>`
+- **教训**: `excel_parser.py` 与 `interactor.py` 中各有独立但功能重复的 HTML 兜底逻辑，导入时应统一收敛到一处
+
+### 经验 2: 文件格式抽象应放在解析层，而非路由层
+- **重构**: 新增 `_read_raw_data()` 函数作为格式检测层，`_read_and_sanitize()` 不再关心文件格式
+- **效果**: 后续扩展 `.csv` 等格式只需改 `_read_raw_data()` 一处，不涉及其余业务逻辑
+- **教训**: 文件解析的入口点应抽象出"原始读取"与"结构化清洗"两层，避免路由/业务代码关心底层格式
+
+### 经验 3: 前端 accept 属性与后端验证应保持同步
+- **问题**: 前端 `accept=".xlsx"` 与后端 `endswith(".xlsx")` 均在两处维护
+- **修复**: 扩展后缀时需同时更新前端 accept + 提示文字 + 后端验证
+- **教训**: 文件类型白名单应优先考虑用后端验证作为唯一权威源，前端仅做辅助提示
