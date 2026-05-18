@@ -166,13 +166,13 @@ export default function MetaTaskPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[180px]">任务名称</TableHead>
-                <TableHead>描述</TableHead>
+                <TableHead className="min-w-0 max-w-[300px]">描述</TableHead>
                 <TableHead className="w-[240px]">LLM 配置</TableHead>
-                <TableHead className="w-[80px]">创建者</TableHead>
-                <TableHead className="w-[140px]">创建时间</TableHead>
+                <TableHead className="w-[120px]">创建者</TableHead>
+                <TableHead className="w-[160px]">创建时间</TableHead>
                 <TableHead className="w-[80px] text-center">执行次数</TableHead>
                 <TableHead className="w-[80px]">状态</TableHead>
-                <TableHead className="w-[140px]">最后执行</TableHead>
+                <TableHead className="w-[160px]">最后执行</TableHead>
                 <TableHead className="w-[160px] text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
