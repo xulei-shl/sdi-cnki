@@ -94,7 +94,6 @@ def run_orchestrated(
 
     pdf_path = download_pdf(
         article_title=title,
-        original_url="",
         output_dir=output_dir,
         page=page,
         max_retries_round2=max_retries,

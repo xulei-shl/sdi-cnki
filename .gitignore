@@ -96,5 +96,6 @@ temp/
 .agent/
 /data/cookies
 /data/exports
+tests/data/exports/
 /data/uploads
 *.db
