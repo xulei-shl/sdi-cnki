@@ -196,21 +196,20 @@ export default function TaskInstancePage() {
           <Input
             placeholder="实例编号搜索..."
             value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
+            onChange={(e) => { setKeyword(e.target.value); setPage(1) }}
             className="w-[240px]"
           />
           <Input
             placeholder="关联模板名称..."
             value={templateName}
-            onChange={(e) => setTemplateName(e.target.value)}
+            onChange={(e) => { setTemplateName(e.target.value); setPage(1) }}
             className="w-[240px]"
           />
-          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-[160px]">
+          <Select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }} className="w-[160px]">
             {STATUS_OPTIONS.map(opt => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </Select>
-          <Button variant="secondary" onClick={() => { setPage(1); fetchInstances() }}>检索</Button>
         </div>
 
         {/* Table */}

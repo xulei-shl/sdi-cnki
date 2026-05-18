@@ -24,7 +24,6 @@ export default function MetaTaskPage() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [keyword, setKeyword] = useState('')
-  const [searchKeyword, setSearchKeyword] = useState('')
   const [loading, setLoading] = useState(false)
   const [selectedTask, setSelectedTask] = useState<MetaTask | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -42,21 +41,16 @@ export default function MetaTaskPage() {
     setLoading(true)
     try {
       const params: MetaTaskQuery = { page, page_size: 20 }
-      if (searchKeyword) params.keyword = searchKeyword
+      if (keyword) params.keyword = keyword
       const res = await getMetaTasks(params)
       setTasks(res.data.items)
       setTotal(res.data.total)
     } finally {
       setLoading(false)
     }
-  }, [page, searchKeyword])
+  }, [page, keyword])
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
-
-  const handleSearch = () => {
-    setPage(1)
-    setSearchKeyword(keyword)
-  }
 
   const handleRowClick = async (taskId: number) => {
     const existing = tasks.find(t => t.id === taskId)
@@ -156,11 +150,9 @@ export default function MetaTaskPage() {
           <Input
             placeholder="按任务名称搜索..."
             value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            onChange={(e) => { setKeyword(e.target.value); setPage(1) }}
             className="w-[320px]"
           />
-          <Button variant="secondary" onClick={handleSearch}>检索</Button>
           <div className="flex-1" />
           <Button onClick={openCreate}>新建任务</Button>
         </div>
