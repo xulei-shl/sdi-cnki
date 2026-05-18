@@ -2,7 +2,7 @@ import http from '@/lib/http'
 import type { SystemConfig } from '@/types'
 
 export function getSystemConfigs() {
-  return http.get<SystemConfig[]>('/system/configs')
+  return http.get<{ items: SystemConfig[] }>('/system/configs')
 }
 
 export function updateSystemConfig(key: string, value: string) {

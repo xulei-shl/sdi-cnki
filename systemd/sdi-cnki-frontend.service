@@ -1,0 +1,17 @@
+[Unit]
+Description=SDI-CNKI Frontend (Vite)
+After=network.target sdi-cnki-backend.service
+BindsTo=sdi-cnki-backend.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/sdi-cnki
+ExecStart=/usr/local/bin/npx vite --port 8848 --host 0.0.0.0
+Restart=always
+RestartSec=5
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+
+[Install]
+WantedBy=multi-user.target

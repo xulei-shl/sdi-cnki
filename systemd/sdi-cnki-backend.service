@@ -1,0 +1,17 @@
+[Unit]
+Description=SDI-CNKI Backend (FastAPI + Workers)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/sdi-cnki
+ExecStart=/path/to/python3.12 -m uvicorn app.main:app --host 0.0.0.0 --port 8456
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/path/to/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+
+[Install]
+WantedBy=multi-user.target

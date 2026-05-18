@@ -6,20 +6,23 @@
 
 | 类别 | 技术 |
 |------|------|
-| 前端 | React 18 + TypeScript + Tailwind CSS v4 + shadcn/ui |
+| 前端 | React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui |
 | 后端 | FastAPI + SQLAlchemy 2.x async + SQLite |
 | 爬虫 | Camoufox + Playwright（反检测浏览器自动化） |
 | AI | OpenAI 兼容接口多配置轮询（LLM 批量分析） |
-| 队列 | 轻量任务队列（SQLite 持久化，零外部依赖） |
+| 队列 | 轻量任务队列（SQLite 持久化，零外部依赖），支持自动内嵌或独立进程 |
 | 推送 | SSE (Server-Sent Events) 实时进度 |
 
-## 快速开始
+## 快速开始（开发环境）
 
 ```bash
-# 后端
-cd backend
+# 1. 后端依赖
 pip install -r requirements.txt
-playwright install chromium
+
+# 2. Playwright 浏览器（Camoufox 基于 Firefox）
+playwright install firefox
+
+# 3. 初始化数据库 & 默认管理员
 mkdir -p data
 python -c "
 import asyncio; from app.database import init_db, engine; from app.dependencies import hash_password
@@ -31,30 +34,17 @@ async def s():
     print('DB ready'); await engine.dispose()
 asyncio.run(s())
 "
-uvicorn app.main:app --reload --port 8000
 
-# Worker 进程（每种队列新终端）
-python worker_runner.py cnki 1
-python worker_runner.py llm 5
-python worker_runner.py download 1
-python worker_runner.py export 2
+# 4. 启动后端（端口 8456，worker 自动内嵌启动）
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8456
 
-# 前端（需先进入 frontend）
-cd frontend
+# 5. 前端
 npm install
 npm run dev
 ```
 
-```
-# 后端启动 (端口 8000)
-cd backend && python -m uvicorn app.main:app --reload --port 8000
-
-# 前端启动 (端口 8848)
-cd frontend && npx vite --port 8848
-```
-
-管理后台：http://localhost:8848（前端，自动代理 /api 到 8000）
-API 文档：http://localhost:8000/docs  
+管理后台：http://localhost:8848（前端，自动代理 `/api` 到 `localhost:8456`）
+API 文档：http://localhost:8456/docs  
 默认账号：`admin` / `admin123`
 
 ## 核心功能
@@ -73,34 +63,31 @@ API 文档：http://localhost:8000/docs
 
 ```
 sdi-cnki/ (v2)
-├── backend/                      # FastAPI 后端
-│   ├── app/
-│   │   ├── main.py              # FastAPI 入口
-│   │   ├── config.py             # Pydantic Settings
-│   │   ├── database.py           # SQLAlchemy async engine
-│   │   ├── dependencies.py       # JWT + bcrypt 工具
-│   │   ├── models/               # 14 张 ORM 模型
-│   │   ├── routers/              # 10 个路由模块
-│   │   ├── services/             # 业务服务层
-│   │   ├── task_queue/           # 轻量任务队列
-│   │   ├── utils/                # 日志/异常/加密/标准化
-│   │   └── worker/               # Worker 实现
-│   ├── worker_runner.py          # Worker 进程入口
-│   ├── alembic/                  # 数据库迁移
-│   ├── tests/                    # 测试用例
-│   └── requirements.txt
-├── frontend/                     # React 18 + Tailwind + shadcn/ui 前端
-│   ├── src/
-│   │   ├── pages/                # 页面组件
-│   │   ├── api/                  # HTTP API 模块
-│   │   ├── lib/                  # SSE 客户端、HTTP 工具等
-│   │   ├── context/              # Auth 上下文
-│   │   ├── components/           # UI 组件
-│   │   └── types/                # TypeScript 类型
-│   └── package.json
+├── app/                          # FastAPI 后端
+│   ├── main.py                  # FastAPI 入口
+│   ├── config.py                 # Pydantic Settings
+│   ├── database.py               # SQLAlchemy async engine
+│   ├── dependencies.py           # JWT + bcrypt 工具
+│   ├── models/                   # ORM 模型
+│   ├── routers/                  # 路由模块
+│   ├── services/                 # 业务服务层
+│   ├── task_queue/               # 轻量任务队列
+│   ├── utils/                    # 日志/异常/加密/标准化
+│   └── worker/                   # Worker 实现
+├── src/                          # React 前端
+│   ├── pages/                    # 页面组件
+│   ├── api/                      # HTTP API 模块
+│   ├── lib/                      # HTTP 客户端、SSE、工具函数
+│   ├── context/                  # Auth 上下文
+│   ├── components/               # UI 组件
+│   └── types/                    # TypeScript 类型
+├── data/                         # 运行时数据（DB、上传、下载、导出）
 ├── docs/                         # 设计文档与手册
-├── Dockerfile                    # 构建镜像
-└── .rules/                       # 开发规范
+├── tests/                        # 测试用例
+├── worker_runner.py              # Worker 独立进程入口
+├── run.py                        # 开发用启动入口
+├── vite.config.ts                # Vite 配置（含 /api 反向代理）
+└── Dockerfile                    # 构建镜像
 ```
 
 ## 任务队列
@@ -120,3 +107,33 @@ pending → running → search_completed → analyzing
 ```
 
 任意阶段失败 → `failed`，通过 SSE 和企微 Webhook 即时通知。
+
+## 生产部署（Ubuntu + systemd）
+
+详见 `Ubuntu部署说明.md`，关键步骤概览：
+
+```bash
+# 1. 安装依赖 & 构建
+pip install -r requirements.txt
+playwright install firefox
+npm install && npm run build
+
+# 2. 初始化数据库（自动在首次启动完成，亦可手动）
+mkdir -p data
+
+# 3. 防火墙（允许局域网访问后端 API 和前端页面）
+ufw allow 8456/tcp comment 'SDI-CNKI Backend API'
+ufw allow 8848/tcp comment 'SDI-CNKI Frontend'
+
+# 4. systemd 服务（开机自启）
+cp systemd/*.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now sdi-cnki-backend sdi-cnki-frontend
+```
+
+| systemd 服务 | 端口 | 说明 |
+|---|---|---|
+| `sdi-cnki-backend.service` | **8456** | FastAPI + 4 个 Worker 内嵌自动启动 |
+| `sdi-cnki-frontend.service` | **8848** | Vite 服务器，自动反向代理 `/api` → `localhost:8456` |
+
+> **端口 8456** 替代默认 8000，避免与系统上可能的 chromadb 等服务冲突。
