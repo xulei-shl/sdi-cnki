@@ -23,7 +23,7 @@ export function Sidebar() {
   return (
     <aside className="w-60 border-r bg-background flex flex-col shrink-0">
       <div className="h-14 flex items-center px-4 border-b">
-        <h1 className="font-semibold text-base">CNKI 定题服务</h1>
+        <img src="/logo.svg" alt="SDI-CNKI" className="h-7 w-auto" />
       </div>
 
       <nav className="flex-1 p-2 space-y-1 overflow-y-auto">

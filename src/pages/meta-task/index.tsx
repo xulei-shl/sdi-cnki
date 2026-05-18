@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useHiagentWidget } from '@/hooks/use-hiagent-widget'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -51,6 +52,8 @@ export default function MetaTaskPage() {
   }, [page, keyword])
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
+
+  useHiagentWidget('d84ia1b7hq5hrmisfr70')
 
   const handleRowClick = async (taskId: number) => {
     const existing = tasks.find(t => t.id === taskId)

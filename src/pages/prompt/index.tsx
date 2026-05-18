@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useHiagentWidget } from '@/hooks/use-hiagent-widget'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -52,6 +53,8 @@ export default function PromptPage() {
   }
 
   useEffect(() => { fetchData() }, [])
+
+  useHiagentWidget('d858cl5jqihd1jfiqa40')
 
   const openCreate = async () => {
     setEditItem(null)
