@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Optional
 
 from app.utils import timezone
+from app.config import get_settings
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select, func, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +20,8 @@ from app.models.task_result import TaskResult
 from app.utils.exceptions import NotFoundError, ValidationError
 from app.utils.oplog import log_operation
 from app.routers import get_current_user_from_header
+from app.services.excel_parser import parse_excel_to_records
+from app.services.dedup_service import batch_check_and_mark
 
 router = APIRouter()
 
@@ -555,3 +559,131 @@ async def run_task_instance(
     await broadcast_event(instance_id, "task.progress", {"status": "search_queued"})
     await log_operation(db, current_user.id, "run", "task_instance", instance_id, f"Run instance {inst.instance_no}")
     return {"message": "Instance queued for execution"}
+
+
+@router.post("/{instance_id}/import-excel")
+async def import_excel_results(
+    instance_id: int,
+    file: UploadFile = File(...),
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(TaskInstance).where(TaskInstance.id == instance_id)
+    result = await db.execute(stmt)
+    inst = result.scalar_one_or_none()
+    if not inst:
+        raise NotFoundError("TaskInstance", instance_id)
+    if current_user.role != "admin" and inst.creator_id != current_user.id:
+        from app.utils.exceptions import PermissionDeniedError
+        raise PermissionDeniedError()
+    if inst.status != "pending":
+        raise ValidationError(f"任务实例状态不允许导入，当前状态：{inst.status}")
+    if inst.auto_run:
+        raise ValidationError("仅「确认后运行」创建的实例支持 Excel 导入")
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls", ".csv")):
+        raise ValidationError("仅支持 .xlsx、.xls、.csv 格式的文件")
+
+    settings = get_settings()
+    instance_no = inst.instance_no
+    upload_dir = Path(settings.uploads_dir) / instance_no
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = Path(file.filename).name
+    dest = upload_dir / f"imported_{safe_name}"
+
+    try:
+        content = await file.read()
+        dest.write_bytes(content)
+    except Exception as e:
+        raise ValidationError(f"文件保存失败：{str(e)}")
+
+    try:
+        records = parse_excel_to_records(str(dest))
+    except Exception as e:
+        if dest.exists():
+            dest.unlink()
+        raise ValidationError(f"文件无法读取，请确认是有效的 Excel 文件：{str(e)}")
+
+    if not records:
+        if dest.exists():
+            dest.unlink()
+        raise ValidationError("未解析到有效数据，请确认上传的是 CNKI 导出的 Excel 文件")
+
+    if len(records) > 500:
+        if dest.exists():
+            dest.unlink()
+        raise ValidationError(f"数据行数超过上限（最多 500 条），当前 {len(records)} 条")
+
+    meta_task_id = inst.meta_task_id
+    marked_records, duplicate_count = await batch_check_and_mark(
+        db, records, meta_task_id, instance_id,
+    )
+
+    for rec in marked_records:
+        task_result = TaskResult(
+            task_instance_id=instance_id,
+            duplicate_ref_id=rec.get("duplicate_ref_id"),
+            title=rec.get("title", ""),
+            authors=rec.get("authors", ""),
+            organ=rec.get("organ", ""),
+            source_journal=rec.get("source_journal", ""),
+            first_duty=rec.get("first_duty", ""),
+            keywords=rec.get("keywords", ""),
+            abstract=rec.get("abstract", ""),
+            publish_time=rec.get("publish_time", ""),
+            fund=rec.get("fund", ""),
+            publish_year=rec.get("publish_year"),
+            volume=rec.get("volume", ""),
+            issue=rec.get("issue", ""),
+            pages=rec.get("pages", ""),
+            clc=rec.get("clc", ""),
+            issn=rec.get("issn", ""),
+            original_url=rec.get("original_url", ""),
+            doi=rec.get("doi", ""),
+            reference_format=rec.get("reference_format", ""),
+            title_normalized=rec.get("title_normalized", ""),
+            source_journal_normalized=rec.get("source_journal_normalized", ""),
+            is_duplicate=rec.get("is_duplicate", False),
+            is_passed=rec.get("is_passed"),
+        )
+        db.add(task_result)
+
+    total = len(records)
+    valid = total - duplicate_count
+    inst.status = "search_completed"
+    inst.search_result_file_path = str(dest)
+    inst.search_result_count = total
+    inst.valid_data_count = valid
+    inst.duplicate_count = duplicate_count
+    inst.search_completed_at = timezone.now()
+    inst.started_at = timezone.now()
+
+    if valid > 0 and valid <= 2000:
+        from app.task_queue.crud import TaskQueueService
+        svc = TaskQueueService(db)
+        await svc.enqueue(
+            queue_type="llm",
+            task_type="llm_analysis",
+            params_json=json.dumps({"instance_id": instance_id, "instance_no": instance_no}),
+            task_key=f"llm_{instance_no}",
+            timeout_sec=3600,
+        )
+
+    await db.commit()
+
+    await log_operation(db, current_user.id, "import", "task_instance", instance_id,
+                        f"Excel 导入 {instance_no}：共 {total} 条，有效 {valid} 条，重复 {duplicate_count} 条")
+
+    from app.routers.sse import broadcast_event
+    await broadcast_event(instance_id, "task.progress", {
+        "status": "search_completed",
+        "total": total,
+        "valid": valid,
+        "duplicate": duplicate_count,
+    })
+
+    return {
+        "message": "Excel 数据导入成功",
+        "total": total,
+        "valid": valid,
+        "duplicate": duplicate_count,
+    }

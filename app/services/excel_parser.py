@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -55,8 +56,35 @@ def parse_excel_to_records(excel_path: str | Path) -> list[dict[str, Any]]:
     return records
 
 
+def _read_raw_data(path: Path) -> pd.DataFrame:
+    suffix = path.suffix.lower()
+
+    if suffix == ".csv":
+        for enc in ("utf-8", "gbk", "gb2312", "utf-16"):
+            try:
+                return pd.read_csv(path, header=None, encoding=enc, dtype=str).fillna("")
+            except (UnicodeDecodeError, ValueError):
+                continue
+        return pd.DataFrame()
+
+    try:
+        return pd.read_excel(path, engine="openpyxl", header=None, dtype=str).fillna("")
+    except Exception:
+        pass
+
+    try:
+        html_content = path.read_text(encoding="utf-8")
+        tables = pd.read_html(StringIO(html_content), flavor="lxml", header=None)
+        if tables:
+            return tables[0].fillna("")
+    except Exception:
+        pass
+
+    return pd.DataFrame()
+
+
 def _read_and_sanitize(excel_path: str | Path) -> pd.DataFrame:
-    df = pd.read_excel(excel_path, engine="openpyxl", header=None).fillna("")
+    df = _read_raw_data(excel_path if isinstance(excel_path, Path) else Path(excel_path))
     current_headers: list[str] = _try_infer_headers(df)
     all_columns: list[str] = list(current_headers)
     rows: list[list[str]] = []

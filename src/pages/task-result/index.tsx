@@ -11,7 +11,7 @@ import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detai
 import { Separator } from '@/components/ui/separator'
 import { AxiosError } from 'axios'
 import { toast } from 'sonner'
-import { getTaskInstance } from '@/api/task-instances'
+import { getTaskInstance, importExcelResults } from '@/api/task-instances'
 import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis, downloadExportFile } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
 import { Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
@@ -134,6 +134,9 @@ export default function TaskResultPage() {
   const [exporting, setExporting] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const [confirmAction, setConfirmAction] = useState<{ type: string; count?: number } | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
   const sseRef = useRef<SseClient | null>(null)
   const getAuthToken = () => localStorage.getItem('access_token') || ''
 
@@ -318,6 +321,27 @@ export default function TaskResultPage() {
     setConfirmAction({ type: 'export' })
   }
 
+  const handleImportExcel = async () => {
+    if (!uploadFile || importing) return
+    setImporting(true)
+    setImportError(null)
+    try {
+      const res = await importExcelResults(instanceId, uploadFile)
+      const d = res.data
+      const msg = `导入成功：共 ${d.total} 条，有效 ${d.valid} 条，重复 ${d.duplicate} 条`
+      toast.success(msg)
+      setUploadFile(null)
+      fetchInstance()
+      fetchResults()
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || '导入失败'
+      setImportError(msg)
+      toast.error(msg)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   const doConfirm = async () => {
     if (!confirmAction) return
     const { type } = confirmAction
@@ -468,149 +492,214 @@ export default function TaskResultPage() {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Results Table */}
+        {/* Results Table / Upload Area */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {/* Action & Filter Toolbar */}
-          <div className="px-8 py-5 border-b flex items-center justify-between flex-wrap gap-6 shrink-0">
-            {/* Filters */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <Select value={analysisStatus} onChange={(e) => { setAnalysisStatus(e.target.value); setPage(1) }} className="w-[120px]">
-                {ANALYSIS_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </Select>
-              <Select value={analysisResult} onChange={(e) => { setAnalysisResult(e.target.value); setPage(1) }} className="w-[120px]">
-                {ANALYSIS_RESULT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </Select>
-              <Select value={minScore} onChange={(e) => { setMinScore(e.target.value); setPage(1) }} className="w-[100px]">
-                <option value="">分析评分</option>
-                <option value="4">≥4</option>
-                <option value="6">≥6</option>
-                <option value="8">≥8</option>
-                <option value="9">≥9</option>
-              </Select>
-              <Select value={reviewStatus} onChange={(e) => { setReviewStatus(e.target.value); setPage(1) }} className="w-[120px]">
-                {REVIEW_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </Select>
-              <Select value={downloadStatus} onChange={(e) => { setDownloadStatus(e.target.value); setPage(1) }} className="w-[120px]">
-                {DOWNLOAD_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </Select>
-              <Input placeholder="题名关键词" value={keyword} onChange={(e) => { setKeyword(e.target.value); setPage(1) }} className="w-[150px]" />
-              <Input placeholder="年份" value={publishYear} onChange={(e) => { setPublishYear(e.target.value); setPage(1) }} className="w-[80px]" />
-              <label className="flex items-center gap-1 text-sm bg-accent/50 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/80 transition-colors">
-                <Checkbox checked={includeDuplicate} onChange={(e) => { setIncludeDuplicate(e.target.checked); setPage(1) }} />
-                <span className="ml-1">含重复</span>
-              </label>
-            </div>
+          {instance?.status === 'pending' && !instance?.auto_run ? (
+            <div className="flex-1 flex items-center justify-center p-12">
+              <div className="max-w-md w-full space-y-6">
+                <div className="text-center">
+                  <h3 className="text-lg font-medium">Excel 数据导入</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    上传 CNKI 导出的 .xlsx 文件，导入后自动执行查重和 LLM 分析
+                  </p>
+                </div>
 
-            {/* Batch Actions */}
-            <div className="flex items-center gap-3">
-              {selectedIds.size > 0 && (
-                <>
-                  <span className="text-sm font-medium text-primary">已选中 {selectedIds.size} 项</span>
-                  <button
-                    onClick={() => setSelectedIds(new Set())}
-                    className="p-1 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors text-muted-foreground"
-                    title="清空选择"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </>
-              )}
-              <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchPass}>批量通过</Button>
-              <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchReject}>批量拒绝</Button>
-              {['analyzing_completed', 'download_queued', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
-                <Button size="sm" variant="outline" onClick={handleExport} disabled={exporting}>
-                  {exporting ? '导出中...' : '结果导出'}
-                </Button>
-              )}
-              {['analyzing_completed', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
-                <Button size="sm" variant="outline" onClick={handleRetryAnalysis} disabled={retrying}>
-                  {retrying ? '分析中...' : 'LLM 分析'}
-                </Button>
-              )}
-              {['analyzing_completed', 'downloading'].includes(instance?.status || '') && (
-                <Button size="sm" variant="outline" onClick={handleDownload}>PDF 下载</Button>
-              )}
-            </div>
-          </div>
-
-          {/* Table */}
-          <div className="flex-1 overflow-auto px-8 py-6">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">
-                    <Checkbox
-                      checked={results.length > 0 && results.every(r => selectedIds.has(r.id))}
-                      ref={el => { if (el) el.indeterminate = results.some(r => selectedIds.has(r.id)) && !results.every(r => selectedIds.has(r.id)) }}
-                      onChange={toggleAll}
-                    />
-                  </TableHead>
-                  <TableHead className="min-w-[350px] flex-1">题名</TableHead>
-                  <TableHead className="w-[180px]">期刊</TableHead>
-                  <TableHead className="w-[70px] text-center">出版年</TableHead>
-                  <TableHead className="w-[120px] text-center">相关性</TableHead>
-                  <TableHead className="w-[180px]">状态 <span className="text-xs font-normal text-muted-foreground">(分析/审核/下载)</span></TableHead>
-                  <TableHead className="w-[160px] text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center py-12">
-                      <div className="flex items-center justify-center gap-2 text-muted-foreground animate-pulse">
-                        <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-                        数据加载中...
+                <div className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors">
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={(e) => {
+                      setUploadFile(e.target.files?.[0] || null)
+                      setImportError(null)
+                    }}
+                    className="hidden"
+                    id="excel-upload"
+                  />
+                  <label htmlFor="excel-upload" className="cursor-pointer block">
+                    {uploadFile ? (
+                      <div>
+                        <p className="font-medium">{uploadFile.name}</p>
+                        <p className="text-sm text-muted-foreground mt-1">点击重新选择</p>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ) : results.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">暂无数据</TableCell></TableRow>
-                ) : results.map((row) => {
-                  const score = row.llm_analysis?.parsed_result?.relevance_score ?? null
-                  return (
-                    <TableRow key={row.id} className="cursor-pointer" onClick={() => viewDetail(row)}>
-                      <TableCell onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-                        <Checkbox checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} />
-                      </TableCell>
-                      <TableCell>
-                        <div className="truncate max-w-none" title={row.title}>
-                          {row.title}
-                          {row.is_duplicate && <Badge variant="warning" className="ml-1 text-xs">重复</Badge>}
-                        </div>
-                      </TableCell>
-                      <TableCell className="truncate max-w-[180px]">{row.source_journal || '-'}</TableCell>
-                      <TableCell className="text-center">{row.publish_year ?? '-'}</TableCell>
-                      <TableCell className="text-center">
-                        <span className={`text-xs ${relevanceColor(score)}`}>{score ?? '-'}</span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1 text-xs">
-                          <span className={analysisTextColor(row.llm_analysis?.status, row.llm_analysis?.parsed_result?.is_target_topic)}>
-                            {getAnalysisLabel(row.llm_analysis?.status, row.llm_analysis?.parsed_result)}
-                          </span>
-                          <span className="text-muted-foreground">/</span>
-                          <span className={reviewTextColor(row.is_passed)}>
-                            {row.is_passed === true ? '通过' : row.is_passed === false ? '拒绝' : '未审'}
-                          </span>
-                          <span className="text-muted-foreground">/</span>
-                          <span className={downloadTextColor(row.download?.download_status)}>
-                            {DOWNLOAD_BADGE[row.download?.download_status || 'pending'].label}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-                        <div className="flex justify-end gap-3">
-                          <Button variant="link" className="h-auto p-0 font-normal" onClick={() => handleSinglePass(row)}>通过</Button>
-                          <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={() => handleSingleReject(row)}>拒绝</Button>
-                        </div>
-                      </TableCell>
+                    ) : (
+                      <div>
+                        <p className="font-medium">点击选择文件</p>
+                        <p className="text-sm text-muted-foreground mt-1">支持 .xlsx、.xls、.csv 格式，最多 500 条数据</p>
+                      </div>
+                    )}
+                  </label>
+                </div>
+
+                <Button
+                  className="w-full"
+                  onClick={handleImportExcel}
+                  disabled={!uploadFile || importing}
+                >
+                  {importing ? '导入中...' : '开始导入'}
+                </Button>
+
+                {importError && (
+                  <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 text-sm text-destructive">
+                    {importError}
+                  </div>
+                )}
+
+                <div className="bg-muted/30 rounded-lg p-4 text-sm text-muted-foreground space-y-1">
+                  <p>提示：</p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    <li>仅支持「确认后运行」创建的未执行任务实例</li>
+                    <li>请上传 CNKI 检索结果导出的 .xlsx、.xls 或 .csv 文件</li>
+                    <li>导入后将自动执行数据查重和 LLM 智能分析</li>
+                    <li>后续流程：审核 → PDF 下载 → 导出</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Action & Filter Toolbar */}
+              <div className="px-8 py-5 border-b flex items-center justify-between flex-wrap gap-6 shrink-0">
+                {/* Filters */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Select value={analysisStatus} onChange={(e) => { setAnalysisStatus(e.target.value); setPage(1) }} className="w-[120px]">
+                    {ANALYSIS_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </Select>
+                  <Select value={analysisResult} onChange={(e) => { setAnalysisResult(e.target.value); setPage(1) }} className="w-[120px]">
+                    {ANALYSIS_RESULT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </Select>
+                  <Select value={minScore} onChange={(e) => { setMinScore(e.target.value); setPage(1) }} className="w-[100px]">
+                    <option value="">分析评分</option>
+                    <option value="4">≥4</option>
+                    <option value="6">≥6</option>
+                    <option value="8">≥8</option>
+                    <option value="9">≥9</option>
+                  </Select>
+                  <Select value={reviewStatus} onChange={(e) => { setReviewStatus(e.target.value); setPage(1) }} className="w-[120px]">
+                    {REVIEW_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </Select>
+                  <Select value={downloadStatus} onChange={(e) => { setDownloadStatus(e.target.value); setPage(1) }} className="w-[120px]">
+                    {DOWNLOAD_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </Select>
+                  <Input placeholder="题名关键词" value={keyword} onChange={(e) => { setKeyword(e.target.value); setPage(1) }} className="w-[150px]" />
+                  <Input placeholder="年份" value={publishYear} onChange={(e) => { setPublishYear(e.target.value); setPage(1) }} className="w-[80px]" />
+                  <label className="flex items-center gap-1 text-sm bg-accent/50 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/80 transition-colors">
+                    <Checkbox checked={includeDuplicate} onChange={(e) => { setIncludeDuplicate(e.target.checked); setPage(1) }} />
+                    <span className="ml-1">含重复</span>
+                  </label>
+                </div>
+
+                {/* Batch Actions */}
+                <div className="flex items-center gap-3">
+                  {selectedIds.size > 0 && (
+                    <>
+                      <span className="text-sm font-medium text-primary">已选中 {selectedIds.size} 项</span>
+                      <button
+                        onClick={() => setSelectedIds(new Set())}
+                        className="p-1 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors text-muted-foreground"
+                        title="清空选择"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </>
+                  )}
+                  <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchPass}>批量通过</Button>
+                  <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchReject}>批量拒绝</Button>
+                  {['analyzing_completed', 'download_queued', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
+                    <Button size="sm" variant="outline" onClick={handleExport} disabled={exporting}>
+                      {exporting ? '导出中...' : '结果导出'}
+                    </Button>
+                  )}
+                  {['analyzing_completed', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
+                    <Button size="sm" variant="outline" onClick={handleRetryAnalysis} disabled={retrying}>
+                      {retrying ? '分析中...' : 'LLM 分析'}
+                    </Button>
+                  )}
+                  {['analyzing_completed', 'downloading'].includes(instance?.status || '') && (
+                    <Button size="sm" variant="outline" onClick={handleDownload}>PDF 下载</Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="flex-1 overflow-auto px-8 py-6">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={results.length > 0 && results.every(r => selectedIds.has(r.id))}
+                          ref={el => { if (el) el.indeterminate = results.some(r => selectedIds.has(r.id)) && !results.every(r => selectedIds.has(r.id)) }}
+                          onChange={toggleAll}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[350px] flex-1">题名</TableHead>
+                      <TableHead className="w-[180px]">期刊</TableHead>
+                      <TableHead className="w-[70px] text-center">出版年</TableHead>
+                      <TableHead className="w-[120px] text-center">相关性</TableHead>
+                      <TableHead className="w-[180px]">状态 <span className="text-xs font-normal text-muted-foreground">(分析/审核/下载)</span></TableHead>
+                      <TableHead className="w-[160px] text-right">操作</TableHead>
                     </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-            <Pagination current={page} total={total} pageSize={20} onChange={setPage} />
-          </div>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-12">
+                          <div className="flex items-center justify-center gap-2 text-muted-foreground animate-pulse">
+                            <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                            数据加载中...
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : results.length === 0 ? (
+                      <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">暂无数据</TableCell></TableRow>
+                    ) : results.map((row) => {
+                      const score = row.llm_analysis?.parsed_result?.relevance_score ?? null
+                      return (
+                        <TableRow key={row.id} className="cursor-pointer" onClick={() => viewDetail(row)}>
+                          <TableCell onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                            <Checkbox checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} />
+                          </TableCell>
+                          <TableCell>
+                            <div className="truncate max-w-none" title={row.title}>
+                              {row.title}
+                              {row.is_duplicate && <Badge variant="warning" className="ml-1 text-xs">重复</Badge>}
+                            </div>
+                          </TableCell>
+                          <TableCell className="truncate max-w-[180px]">{row.source_journal || '-'}</TableCell>
+                          <TableCell className="text-center">{row.publish_year ?? '-'}</TableCell>
+                          <TableCell className="text-center">
+                            <span className={`text-xs ${relevanceColor(score)}`}>{score ?? '-'}</span>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1 text-xs">
+                              <span className={analysisTextColor(row.llm_analysis?.status, row.llm_analysis?.parsed_result?.is_target_topic)}>
+                                {getAnalysisLabel(row.llm_analysis?.status, row.llm_analysis?.parsed_result)}
+                              </span>
+                              <span className="text-muted-foreground">/</span>
+                              <span className={reviewTextColor(row.is_passed)}>
+                                {row.is_passed === true ? '通过' : row.is_passed === false ? '拒绝' : '未审'}
+                              </span>
+                              <span className="text-muted-foreground">/</span>
+                              <span className={downloadTextColor(row.download?.download_status)}>
+                                {DOWNLOAD_BADGE[row.download?.download_status || 'pending'].label}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                            <div className="flex justify-end gap-3">
+                              <Button variant="link" className="h-auto p-0 font-normal" onClick={() => handleSinglePass(row)}>通过</Button>
+                              <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={() => handleSingleReject(row)}>拒绝</Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+                <Pagination current={page} total={total} pageSize={20} onChange={setPage} />
+              </div>
+            </>
+          )}
         </div>
 
         {/* Right Detail Panel */}
