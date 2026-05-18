@@ -106,7 +106,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
     const newIdx = idx + direction
     if (newIdx < 0 || newIdx >= llmConfigIds.length) return
     const newArr = [...llmConfigIds]
-    ;[newArr[idx], newArr[newIdx]] = [newArr[newIdx], newArr[idx]]
+      ;[newArr[idx], newArr[newIdx]] = [newArr[newIdx], newArr[idx]]
     setLlmConfigIds(newArr)
   }
 
@@ -166,13 +166,13 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           {/* Basic Info */}
           <div>
             <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase">基础信息</h3>
-            <div className="space-y-3">
-              <div className="space-y-1">
+            <div className="space-y-4">
+              <div className="space-y-2">
                 <Label>任务名称 <span className="text-destructive">*</span></Label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="最多 200 字" />
                 {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
               </div>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label>描述</Label>
                 <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
               </div>
@@ -182,26 +182,26 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           {/* CNKI Search Params */}
           <div>
             <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase">CNKI 检索参数</h3>
-            <div className="space-y-3">
-              <div className="space-y-1">
+            <div className="space-y-4">
+              <div className="space-y-2">
                 <Label>检索词 <span className="text-destructive">*</span></Label>
                 <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="输入检索关键词" />
                 {errors.query && <p className="text-xs text-destructive">{errors.query}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <Label>起始年份</Label>
                   <Input type="number" value={yearFrom} onChange={(e) => setYearFrom(e.target.value)} disabled={hasDateRange} placeholder="如 2020" />
                 </div>
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <Label>结束年份</Label>
                   <Input type="number" value={yearTo} onChange={(e) => setYearTo(e.target.value)} disabled={hasDateRange} placeholder="如 2025" />
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">与更新时间范围互斥</p>
 
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label>更新时间范围</Label>
                 <Select value={dateRange} onChange={(e) => setDateRange(e.target.value)} disabled={hasYearRange}>
                   {DATE_RANGE_OPTIONS.map(opt => (
@@ -227,7 +227,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
                 </label> */}
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label>导出上限 <span className="text-destructive">*</span></Label>
                 <Select value={maxExport} onChange={(e) => setMaxExport(Number(e.target.value))}>
                   {MAX_EXPORT_OPTIONS.map(v => (
@@ -278,7 +278,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
                 {errors.llmConfig && <p className="text-xs text-destructive">{errors.llmConfig}</p>}
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label>提示词模板</Label>
                 <Select value={promptTemplateId} onChange={(e) => setPromptTemplateId(e.target.value)}>
                   <option value="">不选择</option>

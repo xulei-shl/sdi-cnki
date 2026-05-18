@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 import { getTaskInstance, importExcelResults } from '@/api/task-instances'
 import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis, downloadExportFile } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
-import { Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, ChevronDown, X } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import type { TaskInstance, TaskStatus } from '@/types'
 
@@ -130,6 +130,7 @@ export default function TaskResultPage() {
   const [minScore, setMinScore] = useState('')
   const [includeDuplicate, setIncludeDuplicate] = useState(false)
   const [downloadStatus, setDownloadStatus] = useState('')
+  const [moreOpen, setMoreOpen] = useState(false)
 
   const [exporting, setExporting] = useState(false)
   const [retrying, setRetrying] = useState(false)
@@ -574,12 +575,14 @@ export default function TaskResultPage() {
                     <option value="8">≥8</option>
                     <option value="9">≥9</option>
                   </Select>
+                  <div className="w-px h-5 bg-border mx-1" />
                   <Select value={reviewStatus} onChange={(e) => { setReviewStatus(e.target.value); setPage(1) }} className="w-[120px]">
                     {REVIEW_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </Select>
                   <Select value={downloadStatus} onChange={(e) => { setDownloadStatus(e.target.value); setPage(1) }} className="w-[120px]">
                     {DOWNLOAD_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </Select>
+                  <div className="w-px h-5 bg-border mx-1" />
                   <Input placeholder="题名关键词" value={keyword} onChange={(e) => { setKeyword(e.target.value); setPage(1) }} className="w-[150px]" />
                   <Input placeholder="年份" value={publishYear} onChange={(e) => { setPublishYear(e.target.value); setPage(1) }} className="w-[80px]" />
                   <label className="flex items-center gap-1 text-sm bg-accent/50 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/80 transition-colors">
@@ -604,18 +607,38 @@ export default function TaskResultPage() {
                   )}
                   <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchPass}>批量通过</Button>
                   <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchReject}>批量拒绝</Button>
-                  {['analyzing_completed', 'download_queued', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
-                    <Button size="sm" variant="outline" onClick={handleExport} disabled={exporting}>
-                      {exporting ? '导出中...' : '结果导出'}
-                    </Button>
-                  )}
-                  {['analyzing_completed', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
-                    <Button size="sm" variant="outline" onClick={handleRetryAnalysis} disabled={retrying}>
-                      {retrying ? '分析中...' : 'LLM 分析'}
-                    </Button>
-                  )}
                   {['analyzing_completed', 'downloading'].includes(instance?.status || '') && (
                     <Button size="sm" variant="outline" onClick={handleDownload}>PDF 下载</Button>
+                  )}
+                  {['analyzing_completed', 'download_queued', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
+                    <div className="relative">
+                      <Button size="sm" variant="outline" onClick={() => setMoreOpen(!moreOpen)}>
+                        更多 <ChevronDown className="h-3 w-3" />
+                      </Button>
+                      {moreOpen && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setMoreOpen(false)} />
+                          <div className="absolute right-0 top-full mt-1 z-50 min-w-[130px] rounded-md border bg-popover p-1 shadow-md">
+                            <button
+                              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:pointer-events-none"
+                              onClick={() => { handleExport(); setMoreOpen(false) }}
+                              disabled={exporting}
+                            >
+                              {exporting ? '导出中...' : '结果导出'}
+                            </button>
+                            {['analyzing_completed', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
+                              <button
+                                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:pointer-events-none"
+                                onClick={() => { handleRetryAnalysis(); setMoreOpen(false) }}
+                                disabled={retrying}
+                              >
+                                {retrying ? '分析中...' : 'LLM 分析'}
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

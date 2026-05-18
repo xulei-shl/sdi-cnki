@@ -149,20 +149,20 @@ export default function UserManagePage() {
           <DialogHeader>
             <DialogTitle>{editUser ? '编辑用户' : '新建用户'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
               <Label>用户名 <span className="text-destructive">*</span></Label>
               <Input value={username} onChange={(e) => setUsername(e.target.value)} />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label>密码 {!editUser && <span className="text-destructive">*</span>}</Label>
               <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={editUser ? '留空不修改' : ''} />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label>邮箱</Label>
               <Input value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label>角色</Label>
               <Select value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
                 <option value="user">普通用户</option>

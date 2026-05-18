@@ -203,10 +203,10 @@ export default function PromptPage() {
             <DialogHeader>
               <DialogTitle>{editItem ? '编辑提示词' : '新建提示词'}</DialogTitle>
             </DialogHeader>
-            <div className="space-y-3 py-2">
+            <div className="space-y-4 py-2">
               {/* Prompt Template Selector (only on create) */}
               {!editItem && templates.length > 0 && (
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <Label>提示词模板（可选）</Label>
                   <Select value={selectedTemplate} onChange={(e) => handleTemplateSelect(e.target.value)}>
                     <option value="">不选择模板，从零创建</option>
@@ -217,25 +217,25 @@ export default function PromptPage() {
                   <p className="text-xs text-muted-foreground">选择后将自动填充提示词内容，可在此基础上编辑</p>
                 </div>
               )}
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label>名称 <span className="text-destructive">*</span></Label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label>提示词内容 <span className="text-destructive">*</span></Label>
                 <Textarea value={content} onChange={(e) => setContent(e.target.value)} rows={12} className="font-mono text-sm" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
                   <Label>版本</Label>
                   <Input value={version} onChange={(e) => setVersion(e.target.value)} />
                 </div>
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <Label>标签（逗号分隔）</Label>
                   <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="如 相关性评估, 默认模板" />
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 pt-1">
                 <Switch checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
                 <Label>启用</Label>
               </div>

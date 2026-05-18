@@ -102,6 +102,33 @@ button:active, a:active {
   transform: scale(0.98);
 }
 
+/* Custom Scrollbar for dropdowns */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-muted-foreground/20 rounded-full;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground/40;
+}
+
+/* Fallback animations for custom components if tailwind-animate is not installed */
+@keyframes in-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes in-zoom {
+  from { transform: scale(0.95); }
+  to { transform: scale(1); }
+}
+.animate-in {
+  animation: in-fade 0.2s ease-out forwards, in-zoom 0.2s ease-out forwards;
+}
+
 /* Elevated table base for readability */
 table {
   @apply tabular-nums;

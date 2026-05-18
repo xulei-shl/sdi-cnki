@@ -104,26 +104,26 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
           实例：{instance?.instance_no}（编辑后的参数将覆盖模板中的参数）
         </p>
 
-        <div className="space-y-4 py-2">
-          <div className="space-y-1">
+        <div className="space-y-6 py-2">
+          <div className="space-y-2">
             <Label>检索词 <span className="text-destructive">*</span></Label>
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="输入检索关键词" />
             {errors.query && <p className="text-xs text-destructive">{errors.query}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label>起始年份</Label>
               <Input type="number" value={yearFrom} onChange={(e) => setYearFrom(e.target.value)} disabled={hasDateRange} placeholder="如 2020" />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label>结束年份</Label>
               <Input type="number" value={yearTo} onChange={(e) => setYearTo(e.target.value)} disabled={hasDateRange} placeholder="如 2025" />
             </div>
           </div>
           <p className="text-xs text-muted-foreground">与更新时间范围互斥</p>
 
-          <div className="space-y-1">
+          <div className="space-y-2">
             <Label>更新时间范围</Label>
             <Select value={dateRange} onChange={(e) => setDateRange(e.target.value)} disabled={hasYearRange}>
               {DATE_RANGE_OPTIONS.map(opt => (
@@ -149,7 +149,7 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
             </label> */}
           </div>
 
-          <div className="space-y-1">
+          <div className="space-y-2">
             <Label>导出上限 <span className="text-destructive">*</span></Label>
             <Select value={maxExport} onChange={(e) => setMaxExport(Number(e.target.value))}>
               {MAX_EXPORT_OPTIONS.map(v => (
