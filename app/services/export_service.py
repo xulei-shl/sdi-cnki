@@ -142,7 +142,8 @@ def _generate_results_xlsx(task_results: list[TaskResult], output_path: str) -> 
         pdf_rel_path = None
         if tr.download_result and tr.download_result.pdf_path:
             _, ext = os.path.splitext(tr.download_result.pdf_path)
-            pdf_rel_path = f"pdfs/{tr.id}{ext}" if ext else None
+            safe_title = tr.title_normalized or f"result_{tr.id}"
+            pdf_rel_path = f"pdfs/{tr.id}_{safe_title}{ext}" if ext else None
         ws.cell(row=row_idx, column=22, value=pdf_rel_path)
         p = parsed or {}
         ws.cell(row=row_idx, column=23, value=p.get("relevance_score"))
