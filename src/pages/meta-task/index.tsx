@@ -3,6 +3,7 @@ import { useHiagentWidget } from '@/hooks/use-hiagent-widget'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Pagination } from '@/components/ui/pagination'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
@@ -297,9 +298,11 @@ export default function MetaTaskPage() {
 
             <DetailSection label="去重配置">
               {(selectedTask as any).dedup_scope_meta_task_names?.length ? (
-                (selectedTask as any).dedup_scope_meta_task_names.map((name: string, i: number) => (
-                  <DetailRow key={i} label={`范围 ${i + 1}`}>{name}</DetailRow>
-                ))
+                <ScrollArea className="max-h-40">
+                  {((selectedTask as any).dedup_scope_meta_task_names as string[]).map((name, i) => (
+                    <DetailRow key={i} label={`范围 ${i + 1}`}>{name}</DetailRow>
+                  ))}
+                </ScrollArea>
               ) : (
                 <DetailRow label="参考范围">仅同模板下去重</DetailRow>
               )}
@@ -307,14 +310,18 @@ export default function MetaTaskPage() {
 
             <DetailSection label="执行历史">
               {(selectedTask as any).recent_instances?.length ? (
-                (selectedTask as any).recent_instances.map((inst: any) => (
-                  <div key={inst.id} className="flex justify-between py-1 text-sm border-b last:border-0">
-                    <span className="text-muted-foreground">{inst.instance_no}</span>
-                    <Badge variant="secondary" className="text-xs">{inst.status}</Badge>
+                <ScrollArea className="max-h-48">
+                  <div className="divide-y">
+                    {((selectedTask as any).recent_instances as any[]).map((inst: any) => (
+                      <div key={inst.id} className="flex justify-between items-center py-2 px-1 text-sm">
+                        <span className="text-muted-foreground font-mono text-xs">{inst.instance_no}</span>
+                        <Badge variant="secondary" className="text-xs">{inst.status}</Badge>
+                      </div>
+                    ))}
                   </div>
-                ))
+                </ScrollArea>
               ) : (
-                <div className="text-sm text-muted-foreground">暂无执行记录</div>
+                <div className="text-sm text-muted-foreground py-3 px-3">暂无执行记录</div>
               )}
             </DetailSection>
           </>
