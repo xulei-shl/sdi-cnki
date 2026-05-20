@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { getAllNotificationConfigs, UserNotificationConfigItem } from '@/api/admin-notification-configs'
+import { getAllNotificationConfigs } from '@/api/admin-notification-configs'
+import type { UserNotificationConfigItem } from '@/api/admin-notification-configs'
 
 export default function AdminNotificationConfigsPage() {
   const [items, setItems] = useState<UserNotificationConfigItem[]>([])

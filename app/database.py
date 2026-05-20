@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -14,6 +14,13 @@ engine = create_async_engine(
     poolclass=NullPool,
     connect_args={"check_same_thread": False, "timeout": 5},
 )
+
+
+@event.listens_for(engine.sync_engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 async_session_factory = async_sessionmaker(
     engine,
@@ -40,6 +47,18 @@ async def _migrate_system_prompts(conn):
     )
 
 
+async def _cleanup_orphan_dedup_scopes():
+    """清理 meta_task_dedup_scopes 中指向已删除任务模板的孤儿记录。"""
+    async with engine.begin() as conn:
+        from sqlalchemy import text as sql_text
+        await conn.execute(
+            sql_text(
+                "DELETE FROM meta_task_dedup_scopes "
+                "WHERE dedup_meta_task_id NOT IN (SELECT id FROM meta_tasks)"
+            )
+        )
+
+
 async def init_db():
     async with engine.begin() as conn:
         from app.models import Base
@@ -47,6 +66,7 @@ async def init_db():
         await _migrate_system_prompts(conn)
         await _seed_default_admin(conn)
         await _seed_default_configs(conn)
+    await _cleanup_orphan_dedup_scopes()
 
 
 async def _seed_default_admin(conn):

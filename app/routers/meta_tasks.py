@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, model_validator
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -403,11 +403,34 @@ async def clone_meta_task(
         ))
 
     existing_dedup_ids = [link.dedup_meta_task_id for link in task.dedup_scope_links]
-    for dedup_id in existing_dedup_ids:
-        db.add(MetaTaskDedupScope(meta_task_id=new_task.id, dedup_meta_task_id=dedup_id))
+    valid_dedup_ids = []
+    if existing_dedup_ids:
+        existing_tasks = await db.execute(
+            select(MetaTask.id).where(MetaTask.id.in_(existing_dedup_ids))
+        )
+        valid_ids = {row[0] for row in existing_tasks.fetchall()}
+        for dedup_id in existing_dedup_ids:
+            if dedup_id not in valid_ids:
+                continue
+            if dedup_id == new_task.id:
+                continue
+            valid_dedup_ids.append(dedup_id)
+            db.add(MetaTaskDedupScope(meta_task_id=new_task.id, dedup_meta_task_id=dedup_id))
 
-    db.add(MetaTaskDedupScope(meta_task_id=task.id, dedup_meta_task_id=new_task.id))
-    db.add(MetaTaskDedupScope(meta_task_id=new_task.id, dedup_meta_task_id=task.id))
+    existing_links = await db.execute(
+        select(MetaTaskDedupScope).where(
+            or_(
+                MetaTaskDedupScope.meta_task_id == task.id,
+                MetaTaskDedupScope.meta_task_id == new_task.id,
+            )
+        )
+    )
+    existing_pairs = {(r.meta_task_id, r.dedup_meta_task_id) for r in existing_links.scalars().all()}
+
+    if (task.id, new_task.id) not in existing_pairs:
+        db.add(MetaTaskDedupScope(meta_task_id=task.id, dedup_meta_task_id=new_task.id))
+    if (new_task.id, task.id) not in existing_pairs:
+        db.add(MetaTaskDedupScope(meta_task_id=new_task.id, dedup_meta_task_id=task.id))
 
     await db.commit()
     await db.refresh(new_task)

@@ -74,7 +74,7 @@ export default function UserSettingsPage() {
             <div className="text-sm font-medium">企业微信通知</div>
             <div className="text-xs text-muted-foreground">任务执行完成或失败时发送通知到企业微信群</div>
           </div>
-          <Switch checked={enabled} onCheckedChange={setEnabled} />
+          <Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
         </div>
 
         {enabled && (
