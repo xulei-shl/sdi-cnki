@@ -20,15 +20,15 @@ const DATE_RANGE_LABELS: Record<string, string> = {
   year: '最近一年', ytd: '今年迄今', 'last-year': '上一年度',
 }
 
-const STATUS_MAP: Record<TaskStatus, { label: string; variant: 'info' | 'warning' | 'success' | 'destructive' | 'secondary' | 'default' }> = {
+const STATUS_MAP: Record<TaskStatus, { label: string; variant: 'info' | 'warning' | 'success' | 'destructive' | 'secondary' | 'default' | 'purple' | 'cyan' | 'orange' }> = {
   pending: { label: '待执行', variant: 'secondary' },
-  search_queued: { label: '检索排队中', variant: 'warning' },
+  search_queued: { label: '检索排队中', variant: 'info' },
   running: { label: '检索中', variant: 'info' },
   search_completed: { label: '已检索', variant: 'info' },
-  analyzing: { label: '分析中', variant: 'info' },
-  analyzing_completed: { label: '审核中', variant: 'info' },
-  download_queued: { label: '下载排队中', variant: 'warning' },
-  downloading: { label: '下载中', variant: 'info' },
+  analyzing: { label: '分析中', variant: 'purple' },
+  analyzing_completed: { label: '审核中', variant: 'orange' },
+  download_queued: { label: '下载排队中', variant: 'cyan' },
+  downloading: { label: '下载中', variant: 'cyan' },
   completed: { label: '已完成', variant: 'success' },
   failed: { label: '失败', variant: 'destructive' },
   cancelled: { label: '已取消', variant: 'secondary' },
