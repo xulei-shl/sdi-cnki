@@ -594,7 +594,7 @@ export default function TaskResultPage() {
                     {ANALYSIS_RESULT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </Select>
                   <Select value={minScore} onChange={(e) => { setMinScore(e.target.value); setPage(1) }} className="w-[100px]">
-                    <option value="">分析评分</option>
+                    <option value="">评分</option>
                     <option value="4">≥4</option>
                     <option value="6">≥6</option>
                     <option value="8">≥8</option>
