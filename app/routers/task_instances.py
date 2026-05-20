@@ -736,8 +736,14 @@ async def import_excel_results(
         raise ValidationError(f"数据行数超过上限（最多 500 条），当前 {len(records)} 条")
 
     meta_task_id = inst.meta_task_id
+    dedup_scope_id = None
+    if inst.meta_task_id:
+        mt = await db.execute(select(MetaTask).where(MetaTask.id == inst.meta_task_id))
+        meta_task_obj = mt.scalar_one_or_none()
+        dedup_scope_id = meta_task_obj.dedup_scope_meta_task_id if meta_task_obj else None
     marked_records, duplicate_count = await batch_check_and_mark(
         db, records, meta_task_id, instance_id,
+        dedup_scope_meta_task_id=dedup_scope_id,
     )
 
     for rec in marked_records:

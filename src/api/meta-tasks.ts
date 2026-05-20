@@ -1,5 +1,5 @@
 import http from '@/lib/http'
-import type { MetaTask, PaginatedResponse } from '@/types'
+import type { MetaTask, DedupCandidate, PaginatedResponse } from '@/types'
 
 export interface MetaTaskQuery {
   keyword?: string
@@ -31,4 +31,8 @@ export function deleteMetaTask(id: number) {
 
 export function executeMetaTask(id: number, autoRun: boolean = true) {
   return http.post(`/meta-tasks/${id}/execute`, { auto_run: autoRun })
+}
+
+export function getDedupCandidates() {
+  return http.get<DedupCandidate[]>('/meta-tasks/dedup-candidates')
 }

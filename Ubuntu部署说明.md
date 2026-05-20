@@ -11,6 +11,29 @@
 | Camoufox | 0.4.11 |
 | Firefox | 146.0.1（Playwright 内置） |
 
+## 更新已有部署（从 Git 拉取新代码后）
+
+```bash
+# 1. 拉取最新代码
+git pull
+
+# 2. 检查是否有新的 Python 依赖
+pip install -r requirements.txt
+
+# 3. 应用数据库迁移（关键：新增字段/表结构变更时必须执行）
+alembic upgrade head
+
+# 4. 重新构建前端
+npm install
+npm run build
+
+# 5. 重启服务
+systemctl restart sdi-cnki-backend sdi-cnki-frontend
+systemctl status sdi-cnki-backend sdi-cnki-frontend --no-pager
+```
+
+> **注意**：`alembic upgrade head` 是增量迁移命令，仅应用当前数据库中尚未运行过的迁移脚本，不会丢失已有数据。迁移脚本位于 `alembic/versions/` 目录下。首次全新部署时 `init_db()` 已包含表创建，无需手动执行 `alembic upgrade head`，但更新部署必须执行。
+
 ## 前置检查
 
 ```bash

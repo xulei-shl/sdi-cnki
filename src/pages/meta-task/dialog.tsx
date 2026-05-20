@@ -8,8 +8,8 @@ import { Select } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { createMetaTask, updateMetaTask } from '@/api/meta-tasks'
-import type { MetaTask, LlmConfig, SystemPrompt } from '@/types'
+import { createMetaTask, updateMetaTask, getDedupCandidates } from '@/api/meta-tasks'
+import type { MetaTask, LlmConfig, SystemPrompt, DedupCandidate } from '@/types'
 
 const MAX_EXPORT_OPTIONS = [50, 100, 150, 200, 250, 300, 350, 400, 450, 500]
 const DATE_RANGE_OPTIONS = [
@@ -46,12 +46,19 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
   const [promptTemplateId, setPromptTemplateId] = useState<string>('')
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [dedupScopeMetaTaskId, setDedupScopeMetaTaskId] = useState<string>('')
+  const [dedupCandidates, setDedupCandidates] = useState<DedupCandidate[]>([])
 
   const isEdit = !!editTask
   const activeLlmConfigs = llmConfigs.filter(c => c.is_active)
 
   useEffect(() => {
     if (open) {
+      getDedupCandidates().then(res => {
+        setDedupCandidates(res.data)
+      }).catch(() => {
+        setDedupCandidates([])
+      })
       if (editTask) {
         setName(editTask.name)
         setDescription(editTask.description || '')
@@ -66,6 +73,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
         setMaxExport(sp.max_export || 500)
         setLlmConfigIds(editTask.llm_configs?.map(c => c.id) || [])
         setPromptTemplateId(editTask.prompt_template_id?.toString() || '')
+        setDedupScopeMetaTaskId(editTask.dedup_scope_meta_task_id?.toString() || '')
       } else {
         setName('')
         setDescription('')
@@ -79,6 +87,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
         setMaxExport(500)
         setLlmConfigIds([])
         setPromptTemplateId('')
+        setDedupScopeMetaTaskId('')
       }
       setErrors({})
     }
@@ -134,6 +143,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
         search_params: searchParams,
         llm_config_ids: llmConfigIds,
         prompt_template_id: promptTemplateId ? parseInt(promptTemplateId) : null,
+        dedup_scope_meta_task_id: dedupScopeMetaTaskId ? parseInt(dedupScopeMetaTaskId) : null,
       }
 
       if (isEdit) {
@@ -235,6 +245,21 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
                   ))}
                 </Select>
               </div>
+            </div>
+          </div>
+
+          {/* 去重范围 */}
+          <div>
+            <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase">去重配置</h3>
+            <div className="space-y-2">
+              <Label>去重范围（可选）</Label>
+              <Select value={dedupScopeMetaTaskId} onChange={(e) => setDedupScopeMetaTaskId(e.target.value)}>
+                <option value="">不选择（仅同模板下去重）</option>
+                {dedupCandidates.filter(c => c.id !== editTask?.id).map(c => (
+                  <option key={c.id} value={c.id}>{c.name}（{c.creator_name}）</option>
+                ))}
+              </Select>
+              <p className="text-xs text-muted-foreground">选择后，检索结果将与所选模板的所有历史数据比对去重，默认始终执行当前模板下的去重</p>
             </div>
           </div>
 

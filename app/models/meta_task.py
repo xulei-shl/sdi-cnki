@@ -19,6 +19,7 @@ class MetaTask(Base):
     schedule_cron = Column(String(100))
     is_periodic = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True, index=True)
+    dedup_scope_meta_task_id = Column(Integer, ForeignKey("meta_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     last_executed_at = Column(DateTime)
     execution_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=timezone.now, server_default=text("(datetime('now', 'localtime'))"), nullable=False)
@@ -27,3 +28,4 @@ class MetaTask(Base):
     creator = relationship("User", back_populates="meta_tasks")
     llm_config_links = relationship("MetaTaskLlmConfig", back_populates="meta_task", cascade="all, delete-orphan")
     task_instances = relationship("TaskInstance", back_populates="meta_task")
+    dedup_scope_meta_task = relationship("MetaTask", remote_side=[id], foreign_keys=[dedup_scope_meta_task_id])

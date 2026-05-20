@@ -62,6 +62,7 @@ class MetaTaskCreate(BaseModel):
     llm_config_ids: list[int]
     schedule_cron: Optional[str] = None
     is_periodic: bool = False
+    dedup_scope_meta_task_id: Optional[int] = None
 
     @model_validator(mode="after")
     def _validate(self):
@@ -78,6 +79,7 @@ class MetaTaskUpdate(BaseModel):
     schedule_cron: Optional[str] = None
     is_periodic: Optional[bool] = None
     is_active: Optional[bool] = None
+    dedup_scope_meta_task_id: Optional[int] = None
 
     @model_validator(mode="after")
     def _validate(self):
@@ -127,6 +129,10 @@ async def list_meta_tasks(
         inst_count = await db.execute(
             select(func.count(TaskInstance.id)).where(TaskInstance.meta_task_id == t.id)
         )
+        dedup_name = None
+        if t.dedup_scope_meta_task_id:
+            dt = await db.execute(select(MetaTask.name).where(MetaTask.id == t.dedup_scope_meta_task_id))
+            dedup_name = dt.scalar()
         items.append({
             "id": t.id,
             "name": t.name,
@@ -141,6 +147,8 @@ async def list_meta_tasks(
             "execution_count": t.execution_count,
             "last_executed_at": t.last_executed_at.isoformat() if t.last_executed_at else None,
             "created_at": t.created_at.isoformat() if t.created_at else "",
+            "dedup_scope_meta_task_id": t.dedup_scope_meta_task_id,
+            "dedup_scope_meta_task_name": dedup_name,
         })
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
@@ -163,6 +171,7 @@ async def create_meta_task(
         schedule_cron=data.schedule_cron,
         is_periodic=data.is_periodic,
         is_active=True,
+        dedup_scope_meta_task_id=data.dedup_scope_meta_task_id,
     )
     db.add(task)
     await db.flush()
@@ -215,6 +224,11 @@ async def get_meta_task(
         {"id": inst.id, "instance_no": inst.instance_no, "status": inst.status, "created_at": inst.created_at.isoformat() if inst.created_at else ""}
         for inst in recent_instances.scalars().all()
     ]
+    dedup_scope_name = None
+    if task.dedup_scope_meta_task_id:
+        dt = await db.execute(select(MetaTask.name).where(MetaTask.id == task.dedup_scope_meta_task_id))
+        dedup_scope_name = dt.scalar()
+
     return {
         "id": task.id,
         "name": task.name,
@@ -232,6 +246,8 @@ async def get_meta_task(
         "creator_name": task.creator.username if task.creator else "",
         "created_at": task.created_at.isoformat() if task.created_at else "",
         "recent_instances": instances,
+        "dedup_scope_meta_task_id": task.dedup_scope_meta_task_id,
+        "dedup_scope_meta_task_name": dedup_scope_name,
     }
 
 
@@ -258,6 +274,8 @@ async def update_meta_task(
     if data.prompt_template_id is not None:
         await _validate_prompt_access(db, data.prompt_template_id, current_user)
         task.prompt_template_id = data.prompt_template_id
+    if data.dedup_scope_meta_task_id is not None:
+        task.dedup_scope_meta_task_id = data.dedup_scope_meta_task_id
     if data.schedule_cron is not None:
         task.schedule_cron = data.schedule_cron
     if data.is_periodic is not None:
@@ -300,6 +318,26 @@ async def delete_meta_task(
     await db.commit()
     await log_operation(db, current_user.id, "delete", "meta_task", task_id, f"Deleted meta task {task.name}")
     return {"message": "Meta task deleted"}
+
+
+@router.get("/dedup-candidates")
+async def list_dedup_candidates(
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    """列出当前用户可作为去重范围参考的任务模板"""
+    where = []
+    if current_user.role != "admin":
+        where.append(MetaTask.creator_id == current_user.id)
+    stmt = select(MetaTask).where(*where).options(
+        selectinload(MetaTask.creator),
+    ).order_by(MetaTask.name)
+    result = await db.execute(stmt)
+    tasks = result.scalars().all()
+    return [
+        {"id": t.id, "name": t.name, "creator_name": t.creator.username if t.creator else ""}
+        for t in tasks
+    ]
 
 
 class ExecuteMetaTaskBody(BaseModel):

@@ -83,8 +83,10 @@ async def process_search_results(
     logger.info(f"Instance {instance.instance_no}: parsed {total} records from Excel")
 
     meta_task_id = instance.meta_task_id
+    dedup_scope_id = instance.meta_task.dedup_scope_meta_task_id if instance.meta_task else None
     marked_records, duplicate_count = await batch_check_and_mark(
         db, records, meta_task_id, instance.id,
+        dedup_scope_meta_task_id=dedup_scope_id,
     )
 
     inserted = 0

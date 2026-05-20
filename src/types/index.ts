@@ -32,6 +32,14 @@ export interface MetaTask {
   llm_configs: LlmConfigItem[]
   created_at: string
   updated_at: string
+  dedup_scope_meta_task_id?: number | null
+  dedup_scope_meta_task_name?: string | null
+}
+
+export interface DedupCandidate {
+  id: number
+  name: string
+  creator_name: string
 }
 
 export interface SearchParams {
