@@ -16,21 +16,23 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("meta_tasks", sa.Column("dedup_scope_meta_task_id", sa.Integer(), nullable=True))
-    op.create_index(
-        op.f("ix_meta_tasks_dedup_scope"),
-        "meta_tasks",
-        ["dedup_scope_meta_task_id"],
-    )
-    op.create_foreign_key(
-        "fk_meta_tasks_dedup_scope",
-        "meta_tasks", "meta_tasks",
-        ["dedup_scope_meta_task_id"], ["id"],
-        ondelete="SET NULL",
-    )
+    with op.batch_alter_table("meta_tasks") as batch_op:
+        batch_op.add_column(sa.Column("dedup_scope_meta_task_id", sa.Integer(), nullable=True))
+        batch_op.create_index(
+            "ix_meta_tasks_dedup_scope",
+            ["dedup_scope_meta_task_id"],
+        )
+        batch_op.create_foreign_key(
+            "fk_meta_tasks_dedup_scope",
+            "meta_tasks",
+            ["dedup_scope_meta_task_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint("fk_meta_tasks_dedup_scope", "meta_tasks", type_="foreignkey")
-    op.drop_index(op.f("ix_meta_tasks_dedup_scope"), table_name="meta_tasks")
-    op.drop_column("meta_tasks", "dedup_scope_meta_task_id")
+    with op.batch_alter_table("meta_tasks") as batch_op:
+        batch_op.drop_constraint("fk_meta_tasks_dedup_scope", type_="foreignkey")
+        batch_op.drop_index("ix_meta_tasks_dedup_scope")
+        batch_op.drop_column("dedup_scope_meta_task_id")

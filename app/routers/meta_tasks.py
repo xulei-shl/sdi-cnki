@@ -184,6 +184,26 @@ async def create_meta_task(
     return {"id": task.id, "name": task.name}
 
 
+@router.get("/dedup-candidates")
+async def list_dedup_candidates(
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    """列出当前用户可作为去重范围参考的任务模板"""
+    where = []
+    if current_user.role != "admin":
+        where.append(MetaTask.creator_id == current_user.id)
+    stmt = select(MetaTask).where(*where).options(
+        selectinload(MetaTask.creator),
+    ).order_by(MetaTask.name)
+    result = await db.execute(stmt)
+    tasks = result.scalars().all()
+    return [
+        {"id": t.id, "name": t.name, "creator_name": t.creator.username if t.creator else ""}
+        for t in tasks
+    ]
+
+
 @router.get("/{task_id}")
 async def get_meta_task(
     task_id: int,
@@ -318,26 +338,6 @@ async def delete_meta_task(
     await db.commit()
     await log_operation(db, current_user.id, "delete", "meta_task", task_id, f"Deleted meta task {task.name}")
     return {"message": "Meta task deleted"}
-
-
-@router.get("/dedup-candidates")
-async def list_dedup_candidates(
-    current_user = Depends(get_current_user_from_header),
-    db: AsyncSession = Depends(get_db),
-):
-    """列出当前用户可作为去重范围参考的任务模板"""
-    where = []
-    if current_user.role != "admin":
-        where.append(MetaTask.creator_id == current_user.id)
-    stmt = select(MetaTask).where(*where).options(
-        selectinload(MetaTask.creator),
-    ).order_by(MetaTask.name)
-    result = await db.execute(stmt)
-    tasks = result.scalars().all()
-    return [
-        {"id": t.id, "name": t.name, "creator_name": t.creator.username if t.creator else ""}
-        for t in tasks
-    ]
 
 
 class ExecuteMetaTaskBody(BaseModel):
