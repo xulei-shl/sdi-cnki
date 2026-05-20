@@ -288,7 +288,8 @@ def _collect_pdfs(task_results: list[TaskResult], pdfs_dir: str) -> int:
             src = tr.download_result.pdf_path
             if os.path.isfile(src):
                 _, ext = os.path.splitext(src)
-                dst_name = f"{tr.id}{ext}"
+                safe_title = tr.title_normalized or f"result_{tr.id}"
+                dst_name = f"{tr.id}_{safe_title}{ext}"
                 dst = os.path.join(pdfs_dir, dst_name)
                 try:
                     shutil.copy2(src, dst)
