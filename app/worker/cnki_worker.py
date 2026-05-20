@@ -256,6 +256,35 @@ async def run_cnki_search(
                 "downloaded": 0,
             },
         })
+        await send_notification(db, {
+            "user_id": instance.creator.id if instance.creator else None,
+            "instance_id": instance_id,
+            "stage": "检索",
+            "meta_task_name": instance.meta_task.name if instance.meta_task else "",
+            "username": instance.creator.username if instance.creator else "",
+            "instance_no": instance.instance_no,
+            "status": "search_completed",
+            "started_at": instance.started_at.isoformat() if instance.started_at else "",
+            "completed_at": timezone.now().isoformat(),
+            "stats": {
+                "total": instance.search_result_count or 0,
+                "valid": instance.valid_data_count or 0,
+                "duplicate": instance.duplicate_count or 0,
+                "analyzed": 0,
+                "downloaded": 0,
+            },
+        })
+
+        # Auto-complete when no valid data (all duplicates / empty result)
+        if not instance.valid_data_count:
+            instance.status = "completed"
+            instance.completed_at = timezone.now()
+            await db.commit()
+            await broadcast_event(instance_id, "task.completed", {
+                "status": "completed",
+                "completed_at": timezone.now().isoformat(),
+            })
+            return
 
         if instance.valid_data_count and instance.valid_data_count > 0 and instance.valid_data_count <= MAX_AUTO_LLM_TRIGGER:
             await svc.enqueue(
@@ -267,13 +296,25 @@ async def run_cnki_search(
             )
             logger.info(f"Auto-enqueued LLM analysis for instance {instance.instance_no} ({instance.valid_data_count} articles)")
     except NoResultsError:
-        instance.status = "search_completed"
+        instance.status = "completed"
         instance.search_result_count = 0
         instance.valid_data_count = 0
         instance.duplicate_count = 0
         instance.search_completed_at = timezone.now()
+        instance.completed_at = timezone.now()
         await db.commit()
-        await svc.complete(item_id, '{"status": "no_results"}')
+        await svc.complete(item_id, '{"status": "completed", "total": 0}')
+        from app.routers.sse import broadcast_event
+        await broadcast_event(instance_id, "task.progress", {
+            "status": "completed",
+            "total": 0,
+            "valid": 0,
+            "duplicate": 0,
+        })
+        await broadcast_event(instance_id, "task.completed", {
+            "status": "completed",
+            "completed_at": timezone.now().isoformat(),
+        })
     except Exception as e:
         logger.error(f"CNKI search failed: {e}", exc_info=True)
         instance.status = "failed"

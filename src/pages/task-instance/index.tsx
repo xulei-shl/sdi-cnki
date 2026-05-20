@@ -9,7 +9,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
 import { AxiosError } from 'axios'
 import { toast } from 'sonner'
-import { getTaskInstances, getTaskInstance, deleteTaskInstance, runTaskInstance, type TaskInstanceQuery } from '@/api/task-instances'
+import { getTaskInstances, getTaskInstance, deleteTaskInstance, runTaskInstance, completeTaskInstance, type TaskInstanceQuery } from '@/api/task-instances'
 import { startExport, getExportStatus, downloadExportFile } from '@/api/task-results'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EditDialog } from './edit-dialog'
@@ -61,6 +61,7 @@ export default function TaskInstancePage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [runningId, setRunningId] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [completingId, setCompletingId] = useState<number | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<TaskInstance | null>(null)
   const [confirmRun, setConfirmRun] = useState<TaskInstance | null>(null)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -182,6 +183,21 @@ export default function TaskInstancePage() {
     }
   }
 
+  const handleCompleteInstance = async (e: React.MouseEvent, inst: TaskInstance) => {
+    e.stopPropagation()
+    setCompletingId(inst.id)
+    try {
+      await completeTaskInstance(inst.id)
+      toast.success('实例已完成')
+      fetchInstances()
+      if (selectedInstance?.id === inst.id) handleRowClick(inst.id)
+    } catch {
+      toast.error('操作失败')
+    } finally {
+      setCompletingId(null)
+    }
+  }
+
   const formatDate = (d: string | null | undefined) => {
     if (!d) return '-'
     return d.slice(0, 16).replace('T', ' ')
@@ -267,6 +283,11 @@ export default function TaskInstancePage() {
                         <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => { e.stopPropagation(); navigate(`/task-instances/${inst.id}/results`) }}>
                           明细
                         </Button>
+                        {inst.status === 'search_completed' && (
+                          <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleCompleteInstance(e, inst)} disabled={completingId === inst.id}>
+                            {completingId === inst.id ? '完成中...' : '完成'}
+                          </Button>
+                        )}
                         {inst.status === 'pending' && !inst.auto_run && (
                           <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleRunInstance(e, inst)} disabled={runningId === inst.id}>
                             {runningId === inst.id ? '执行中...' : '运行'}

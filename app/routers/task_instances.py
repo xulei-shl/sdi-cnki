@@ -683,6 +683,34 @@ async def run_task_instance(
     return {"message": "Instance queued for execution"}
 
 
+@router.post("/{instance_id}/complete")
+async def complete_task_instance(
+    instance_id: int,
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(TaskInstance).where(TaskInstance.id == instance_id)
+    result = await db.execute(stmt)
+    inst = result.scalar_one_or_none()
+    if not inst:
+        raise NotFoundError("TaskInstance", instance_id)
+    if current_user.role != "admin" and inst.creator_id != current_user.id:
+        from app.utils.exceptions import PermissionDeniedError
+        raise PermissionDeniedError()
+    if inst.status != "search_completed":
+        raise ValidationError(f"Cannot complete instance with status: {inst.status}")
+    inst.status = "completed"
+    inst.completed_at = timezone.now()
+    await db.commit()
+    from app.routers.sse import broadcast_event
+    await broadcast_event(instance_id, "task.completed", {
+        "status": "completed",
+        "completed_at": timezone.now().isoformat(),
+    })
+    await log_operation(db, current_user.id, "complete", "task_instance", instance_id, f"Complete instance {inst.instance_no}")
+    return {"message": "Instance completed"}
+
+
 @router.post("/{instance_id}/import-excel")
 async def import_excel_results(
     instance_id: int,
@@ -788,6 +816,7 @@ async def import_excel_results(
     inst.search_completed_at = timezone.now()
     inst.started_at = timezone.now()
 
+    is_auto_completed = False
     if valid > 0 and valid <= 2000:
         from app.task_queue.crud import TaskQueueService
         svc = TaskQueueService(db)
@@ -798,19 +827,29 @@ async def import_excel_results(
             task_key=f"llm_{instance_no}",
             timeout_sec=3600,
         )
+    elif valid == 0:
+        inst.status = "completed"
+        inst.completed_at = timezone.now()
+        is_auto_completed = True
 
     await db.commit()
 
     await log_operation(db, current_user.id, "import", "task_instance", instance_id,
                         f"Excel 导入 {instance_no}：共 {total} 条，有效 {valid} 条，重复 {duplicate_count} 条")
 
+    final_status = "completed" if is_auto_completed else "search_completed"
     from app.routers.sse import broadcast_event
     await broadcast_event(instance_id, "task.progress", {
-        "status": "search_completed",
+        "status": final_status,
         "total": total,
         "valid": valid,
         "duplicate": duplicate_count,
     })
+    if is_auto_completed:
+        await broadcast_event(instance_id, "task.completed", {
+            "status": "completed",
+            "completed_at": timezone.now().isoformat(),
+        })
 
     return {
         "message": "Excel 数据导入成功",

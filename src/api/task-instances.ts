@@ -31,6 +31,10 @@ export function updateTaskInstanceParams(id: number, searchParams: Record<string
   return http.patch(`/task-instances/${id}/params`, { search_params: searchParams })
 }
 
+export function completeTaskInstance(id: number) {
+  return http.post(`/task-instances/${id}/complete`)
+}
+
 export function importExcelResults(instanceId: number, file: File) {
   const formData = new FormData()
   formData.append('file', file)
