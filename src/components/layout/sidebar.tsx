@@ -1,7 +1,7 @@
 import { useAuth } from '@/context/auth'
 import { cn } from '@/lib/utils'
 import { NavLink } from 'react-router-dom'
-import { ClipboardList, LayoutDashboard, Users, Cpu, FileText, Settings, BookOpen, Bell } from 'lucide-react'
+import { ClipboardList, LayoutDashboard, Users, Cpu, FileText, Settings, BookOpen, Bell, Webhook } from 'lucide-react'
 
 const navItems = [
   { to: '/meta-tasks', label: '任务模板', icon: ClipboardList, roles: ['admin', 'user'] },
@@ -16,6 +16,7 @@ const adminItems = [
 
   { to: '/system/prompt-templates', label: '系统提示词模板', icon: BookOpen },
   { to: '/system/config', label: '系统配置', icon: Settings },
+  { to: '/system/notification-configs', label: '通知配置', icon: Webhook },
 ]
 
 export function Sidebar() {
