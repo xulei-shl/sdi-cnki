@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Select } from '@/components/ui/select'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Pagination } from '@/components/ui/pagination'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
@@ -36,14 +37,18 @@ export default function PromptPage() {
   const [templates, setTemplates] = useState<PromptTemplate[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState('')
 
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
 
   const fetchData = async () => {
     setLoading(true)
     try {
-      const res = await getSystemPrompts()
+      const res = await getSystemPrompts({ page, page_size: 20 })
       setPrompts(res.data.items || [])
+      setTotal(res.data.total || 0)
     } catch (err: any) {
       console.error('获取提示词列表失败', err)
       toast.error('加载提示词列表失败')
@@ -52,7 +57,7 @@ export default function PromptPage() {
     }
   }
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => { fetchData() }, [page])
 
   useHiagentWidget(import.meta.env.VITE_HIAGENT_PROMPT_APP_KEY)
 
@@ -198,6 +203,7 @@ export default function PromptPage() {
               ))}
             </TableBody>
           </Table>
+          <Pagination current={page} total={total} pageSize={20} onChange={setPage} />
         </div>
 
         {/* Create/Edit Dialog */}
