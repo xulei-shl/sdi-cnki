@@ -35,6 +35,11 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+
+  --color-theme-a: var(--theme-a);
+  --color-theme-a-bg: var(--theme-a-bg);
+  --color-theme-b: var(--theme-b);
+  --color-theme-b-bg: var(--theme-b-bg);
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -61,6 +66,12 @@
   --input: #e7e5e4;
   --ring: #d6d3d1; /* stone-300 */
   --radius: 0.5rem; /* rounded-lg base */
+
+  /* Theme A/B — professional search keyword groups, harmonized with the warm stone palette */
+  --theme-a: oklch(45% 0.07 265);
+  --theme-a-bg: oklch(96% 0.008 265);
+  --theme-b: oklch(48% 0.1 55);
+  --theme-b-bg: oklch(96% 0.01 50);
 }
 
 .dark {
@@ -83,6 +94,11 @@
   --border: #292524;
   --input: #292524;
   --ring: #44403c;
+
+  --theme-a: oklch(75% 0.06 265);
+  --theme-a-bg: oklch(25% 0.02 265);
+  --theme-b: oklch(75% 0.08 55);
+  --theme-b-bg: oklch(25% 0.02 50);
 }
 
 @layer base {

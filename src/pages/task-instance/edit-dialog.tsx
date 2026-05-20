@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Plus, X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -181,71 +182,77 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
           </div>
 
           {searchMode === 'professional' ? (
-            <div className="space-y-4 border rounded-lg p-3 bg-muted/20">
-              <div className="space-y-2">
-                <Label className="text-blue-600 font-semibold">主题A 关键词组</Label>
+            <div className="space-y-5 border rounded-lg p-4 bg-muted/20">
+              <div className="space-y-3">
+                <Label style={{ color: 'var(--theme-a)' }} className="font-semibold">主题A 关键词组</Label>
                 <p className="text-xs text-muted-foreground">同义词/术语集合（如：阅读推广、全民阅读）</p>
                 {queryGroupA.map((q, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground w-4 shrink-0">{idx + 1}</span>
+                  <div key={idx} className="flex items-center gap-2 group/row">
+                    <span
+                      className="flex items-center justify-center w-5 h-5 rounded text-[11px] font-medium shrink-0"
+                      style={{ backgroundColor: 'var(--theme-a-bg)', color: 'var(--theme-a)' }}
+                    >
+                      {idx + 1}
+                    </span>
                     <Input value={q} onChange={(e) => updateGroupA(idx, e.target.value)} placeholder={`主题A 关键词 ${idx + 1}`} className="flex-1" />
                     <button
                       type="button"
                       onClick={() => removeGroupA(idx)}
-                      className="text-muted-foreground hover:text-destructive shrink-0"
+                      className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover/row:opacity-100 transition-all shrink-0"
                       disabled={queryGroupA.length <= 1}
                     >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
                 ))}
-                <button type="button" onClick={addGroupA} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
+                <button type="button" onClick={addGroupA} className="flex items-center gap-1.5 text-sm font-medium transition-opacity hover:opacity-80" style={{ color: 'var(--theme-a)' }}>
+                  <Plus className="w-4 h-4" />
                   添加关键词
                 </button>
                 {errors.queryGroupA && <p className="text-xs text-destructive">{errors.queryGroupA}</p>}
               </div>
 
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span className="w-6 h-px bg-border flex-1" />
-                <span className="font-medium text-foreground">AND</span>
-                <span className="w-6 h-px bg-border flex-1" />
+              <div className="flex items-center gap-3 text-sm">
+                <span className="h-px flex-1 bg-border" />
+                <span className="flex items-center gap-2 text-muted-foreground/60">
+                  <span className="w-1 h-1 rounded-full bg-border" />
+                  <span className="font-semibold tracking-wider text-foreground/50">AND</span>
+                  <span className="w-1 h-1 rounded-full bg-border" />
+                </span>
+                <span className="h-px flex-1 bg-border" />
               </div>
 
-              <div className="space-y-2">
-                <Label className="text-orange-600 font-semibold">主题B 关键词组</Label>
+              <div className="space-y-3">
+                <Label style={{ color: 'var(--theme-b)' }} className="font-semibold">主题B 关键词组</Label>
                 <p className="text-xs text-muted-foreground">同义词/术语集合（如：AI、大模型、AIGC）</p>
                 {queryGroupB.map((q, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground w-4 shrink-0">{idx + 1}</span>
+                  <div key={idx} className="flex items-center gap-2 group/row">
+                    <span
+                      className="flex items-center justify-center w-5 h-5 rounded text-[11px] font-medium shrink-0"
+                      style={{ backgroundColor: 'var(--theme-b-bg)', color: 'var(--theme-b)' }}
+                    >
+                      {idx + 1}
+                    </span>
                     <Input value={q} onChange={(e) => updateGroupB(idx, e.target.value)} placeholder={`主题B 关键词 ${idx + 1}`} className="flex-1" />
                     <button
                       type="button"
                       onClick={() => removeGroupB(idx)}
-                      className="text-muted-foreground hover:text-destructive shrink-0"
+                      className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover/row:opacity-100 transition-all shrink-0"
                       disabled={queryGroupB.length <= 1}
                     >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
                 ))}
-                <button type="button" onClick={addGroupB} className="flex items-center gap-1 text-sm text-orange-600 hover:text-orange-700">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
+                <button type="button" onClick={addGroupB} className="flex items-center gap-1.5 text-sm font-medium transition-opacity hover:opacity-80" style={{ color: 'var(--theme-b)' }}>
+                  <Plus className="w-4 h-4" />
                   添加关键词
                 </button>
                 {errors.queryGroupB && <p className="text-xs text-destructive">{errors.queryGroupB}</p>}
               </div>
 
-              <div className="text-xs text-muted-foreground bg-muted/40 rounded px-2 py-1.5">
-                检索逻辑：<code className="text-foreground">(SU=A×B) OR (TKA=A×B)</code>，每组内关键词用 OR 连接，两组间用 AND 连接
+              <div className="text-xs leading-relaxed text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 border border-border/50">
+                检索逻辑：<code className="text-foreground font-medium">(SU=A×B) OR (TKA=A×B)</code>，每组内关键词用 OR 连接，两组间用 AND 连接
               </div>
             </div>
           ) : (
