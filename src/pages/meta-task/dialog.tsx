@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Select } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { toast } from 'sonner'
 import { createMetaTask, updateMetaTask, getDedupCandidates } from '@/api/meta-tasks'
 import type { MetaTask, LlmConfig, SystemPrompt, DedupCandidate } from '@/types'
@@ -48,6 +49,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [dedupScopeMetaTaskIds, setDedupScopeMetaTaskIds] = useState<number[]>([])
   const [dedupCandidates, setDedupCandidates] = useState<DedupCandidate[]>([])
+  const [dedupSearch, setDedupSearch] = useState('')
 
   const isEdit = !!editTask
   const activeLlmConfigs = llmConfigs.filter(c => c.is_active)
@@ -165,6 +167,15 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
   const hasDateRange = dateRange !== ''
   const hasYearRange = yearFrom !== '' || yearTo !== ''
 
+  const dedupFiltered = useMemo(() => {
+    const q = dedupSearch.trim().toLowerCase()
+    return dedupCandidates.filter(c => {
+      if (c.id === editTask?.id) return false
+      if (!q) return true
+      return c.name.toLowerCase().includes(q)
+    })
+  }, [dedupCandidates, dedupSearch, editTask])
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
@@ -253,28 +264,48 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
             <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase">去重配置</h3>
             <div className="space-y-2">
               <Label>去重范围（可选，多选）</Label>
-              <div className="border rounded-md p-3 space-y-1">
-                {dedupCandidates.filter(c => c.id !== editTask?.id).length === 0 ? (
-                  <p className="text-sm text-muted-foreground">无可选任务模板</p>
+
+              <Input
+                placeholder="搜索任务模板..."
+                value={dedupSearch}
+                onChange={e => setDedupSearch(e.target.value)}
+              />
+
+              <ScrollArea className="border rounded-md p-2 max-h-48">
+                {dedupFiltered.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-2 text-center">
+                    {dedupCandidates.length === 0 ? '无可选任务模板' : '无匹配模板'}
+                  </p>
                 ) : (
-                  dedupCandidates.filter(c => c.id !== editTask?.id).map(c => {
-                    const checked = dedupScopeMetaTaskIds.includes(c.id)
-                    return (
-                      <label key={c.id} className="flex items-center gap-2 text-sm py-0.5 cursor-pointer hover:text-primary">
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={() => {
-                            setDedupScopeMetaTaskIds(prev =>
-                              checked ? prev.filter(x => x !== c.id) : [...prev, c.id]
-                            )
-                          }}
-                        />
-                        {c.name}（{c.creator_name}）
-                      </label>
-                    )
-                  })
+                  <div className="space-y-0.5">
+                    {dedupFiltered.map(c => {
+                      const checked = dedupScopeMetaTaskIds.includes(c.id)
+                      return (
+                        <label
+                          key={c.id}
+                          className="flex items-center gap-2 text-sm py-1 px-1 rounded cursor-pointer hover:bg-accent"
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onChange={() => {
+                              setDedupScopeMetaTaskIds(prev =>
+                                checked ? prev.filter(x => x !== c.id) : [...prev, c.id]
+                              )
+                            }}
+                          />
+                          <span className="truncate">{c.name}</span>
+                          <span className="text-xs text-muted-foreground shrink-0">（{c.creator_name}）</span>
+                        </label>
+                      )
+                    })}
+                  </div>
                 )}
+              </ScrollArea>
+
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">共 {dedupFiltered.length} 个模板，已选 {dedupScopeMetaTaskIds.length} 个</p>
               </div>
+
               <p className="text-xs text-muted-foreground">选择后，检索结果将与所选模板的所有历史数据比对去重，默认始终执行当前模板下的去重</p>
             </div>
           </div>
