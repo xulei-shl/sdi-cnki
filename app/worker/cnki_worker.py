@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
+from app.models.meta_task import MetaTask
 from app.models.task_instance import TaskInstance
 from app.models.task_result import TaskResult
 from app.services.cnki.browser import CnkiBrowser
@@ -83,10 +84,10 @@ async def process_search_results(
     logger.info(f"Instance {instance.instance_no}: parsed {total} records from Excel")
 
     meta_task_id = instance.meta_task_id
-    dedup_scope_id = instance.meta_task.dedup_scope_meta_task_id if instance.meta_task else None
+    dedup_scope_ids = [link.dedup_meta_task_id for link in (instance.meta_task.dedup_scope_links or [])] if instance.meta_task else []
     marked_records, duplicate_count = await batch_check_and_mark(
         db, records, meta_task_id, instance.id,
-        dedup_scope_meta_task_id=dedup_scope_id,
+        dedup_scope_meta_task_ids=dedup_scope_ids or None,
     )
 
     inserted = 0
@@ -144,7 +145,8 @@ async def run_cnki_search(
     instance_no = params.get("instance_no")
 
     stmt = select(TaskInstance).where(TaskInstance.id == instance_id).options(
-        selectinload(TaskInstance.meta_task), selectinload(TaskInstance.creator),
+        selectinload(TaskInstance.meta_task).selectinload(MetaTask.dedup_scope_links),
+        selectinload(TaskInstance.creator),
     )
     result = await db.execute(stmt)
     instance = result.unique().scalar_one_or_none()

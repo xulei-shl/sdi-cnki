@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.meta_task import MetaTask
+from app.models.meta_task_dedup_scope import MetaTaskDedupScope
 from app.models.meta_task_llm_config import MetaTaskLlmConfig
 from app.models.system_prompt import SystemPrompt
 from app.models.task_instance import TaskInstance
@@ -62,7 +63,7 @@ class MetaTaskCreate(BaseModel):
     llm_config_ids: list[int]
     schedule_cron: Optional[str] = None
     is_periodic: bool = False
-    dedup_scope_meta_task_id: Optional[int] = None
+    dedup_scope_meta_task_ids: list[int] = []
 
     @model_validator(mode="after")
     def _validate(self):
@@ -79,7 +80,7 @@ class MetaTaskUpdate(BaseModel):
     schedule_cron: Optional[str] = None
     is_periodic: Optional[bool] = None
     is_active: Optional[bool] = None
-    dedup_scope_meta_task_id: Optional[int] = None
+    dedup_scope_meta_task_ids: Optional[list[int]] = None
 
     @model_validator(mode="after")
     def _validate(self):
@@ -107,6 +108,7 @@ async def list_meta_tasks(
         .options(
             selectinload(MetaTask.llm_config_links).selectinload(MetaTaskLlmConfig.llm_config),
             selectinload(MetaTask.creator),
+            selectinload(MetaTask.dedup_scope_links),
         )
         .order_by(desc(MetaTask.created_at))
         .offset((page - 1) * page_size)
@@ -123,16 +125,20 @@ async def list_meta_tasks(
         prompts = await db.execute(select(SystemPrompt).where(SystemPrompt.id.in_(prompt_ids)))
         prompt_map = {p.id: p.name for p in prompts.scalars().all()}
 
+    all_dedup_ids = list({link.dedup_meta_task_id for t in tasks for link in t.dedup_scope_links})
+    dedup_name_map = {}
+    if all_dedup_ids:
+        dedup_tasks = await db.execute(select(MetaTask).where(MetaTask.id.in_(all_dedup_ids)))
+        dedup_name_map = {dt.id: dt.name for dt in dedup_tasks.scalars().all()}
+
     items = []
     for t in tasks:
         llm_names = [link.llm_config.name for link in t.llm_config_links if link.llm_config]
         inst_count = await db.execute(
             select(func.count(TaskInstance.id)).where(TaskInstance.meta_task_id == t.id)
         )
-        dedup_name = None
-        if t.dedup_scope_meta_task_id:
-            dt = await db.execute(select(MetaTask.name).where(MetaTask.id == t.dedup_scope_meta_task_id))
-            dedup_name = dt.scalar()
+        dedup_ids = sorted([link.dedup_meta_task_id for link in t.dedup_scope_links])
+        dedup_names = [dedup_name_map.get(did, "") for did in dedup_ids]
         items.append({
             "id": t.id,
             "name": t.name,
@@ -147,8 +153,8 @@ async def list_meta_tasks(
             "execution_count": t.execution_count,
             "last_executed_at": t.last_executed_at.isoformat() if t.last_executed_at else None,
             "created_at": t.created_at.isoformat() if t.created_at else "",
-            "dedup_scope_meta_task_id": t.dedup_scope_meta_task_id,
-            "dedup_scope_meta_task_name": dedup_name,
+            "dedup_scope_meta_task_ids": dedup_ids,
+            "dedup_scope_meta_task_names": dedup_names,
         })
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
@@ -171,13 +177,16 @@ async def create_meta_task(
         schedule_cron=data.schedule_cron,
         is_periodic=data.is_periodic,
         is_active=True,
-        dedup_scope_meta_task_id=data.dedup_scope_meta_task_id,
     )
     db.add(task)
     await db.flush()
     for idx, llm_id in enumerate(data.llm_config_ids):
         link = MetaTaskLlmConfig(meta_task_id=task.id, llm_config_id=llm_id, priority=idx)
         db.add(link)
+    for dedup_id in data.dedup_scope_meta_task_ids:
+        if dedup_id != task.id:
+            link = MetaTaskDedupScope(meta_task_id=task.id, dedup_meta_task_id=dedup_id)
+            db.add(link)
     await db.commit()
     await db.refresh(task)
     await log_operation(db, current_user.id, "create", "meta_task", task.id, f"Created meta task {task.name}")
@@ -216,6 +225,7 @@ async def get_meta_task(
         .options(
             selectinload(MetaTask.llm_config_links).selectinload(MetaTaskLlmConfig.llm_config),
             selectinload(MetaTask.creator),
+            selectinload(MetaTask.dedup_scope_links),
         )
     )
     result = await db.execute(stmt)
@@ -244,10 +254,12 @@ async def get_meta_task(
         {"id": inst.id, "instance_no": inst.instance_no, "status": inst.status, "created_at": inst.created_at.isoformat() if inst.created_at else ""}
         for inst in recent_instances.scalars().all()
     ]
-    dedup_scope_name = None
-    if task.dedup_scope_meta_task_id:
-        dt = await db.execute(select(MetaTask.name).where(MetaTask.id == task.dedup_scope_meta_task_id))
-        dedup_scope_name = dt.scalar()
+    dedup_ids = sorted([link.dedup_meta_task_id for link in task.dedup_scope_links])
+    dedup_names = []
+    if dedup_ids:
+        dt = await db.execute(select(MetaTask).where(MetaTask.id.in_(dedup_ids)))
+        dedup_map = {d.id: d.name for d in dt.scalars().all()}
+        dedup_names = [dedup_map.get(did, "") for did in dedup_ids]
 
     return {
         "id": task.id,
@@ -266,8 +278,8 @@ async def get_meta_task(
         "creator_name": task.creator.username if task.creator else "",
         "created_at": task.created_at.isoformat() if task.created_at else "",
         "recent_instances": instances,
-        "dedup_scope_meta_task_id": task.dedup_scope_meta_task_id,
-        "dedup_scope_meta_task_name": dedup_scope_name,
+        "dedup_scope_meta_task_ids": dedup_ids,
+        "dedup_scope_meta_task_names": dedup_names,
     }
 
 
@@ -294,8 +306,17 @@ async def update_meta_task(
     if data.prompt_template_id is not None:
         await _validate_prompt_access(db, data.prompt_template_id, current_user)
         task.prompt_template_id = data.prompt_template_id
-    if data.dedup_scope_meta_task_id is not None:
-        task.dedup_scope_meta_task_id = data.dedup_scope_meta_task_id
+    if data.dedup_scope_meta_task_ids is not None:
+        existing_dedup = await db.execute(
+            select(MetaTaskDedupScope).where(MetaTaskDedupScope.meta_task_id == task_id)
+        )
+        for link in existing_dedup.scalars().all():
+            await db.delete(link)
+        await db.flush()
+        for dedup_id in data.dedup_scope_meta_task_ids:
+            if dedup_id != task.id:
+                link = MetaTaskDedupScope(meta_task_id=task.id, dedup_meta_task_id=dedup_id)
+                db.add(link)
     if data.schedule_cron is not None:
         task.schedule_cron = data.schedule_cron
     if data.is_periodic is not None:
@@ -338,6 +359,61 @@ async def delete_meta_task(
     await db.commit()
     await log_operation(db, current_user.id, "delete", "meta_task", task_id, f"Deleted meta task {task.name}")
     return {"message": "Meta task deleted"}
+
+
+@router.post("/{task_id}/clone")
+async def clone_meta_task(
+    task_id: int,
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(MetaTask)
+        .where(MetaTask.id == task_id)
+        .options(
+            selectinload(MetaTask.llm_config_links),
+            selectinload(MetaTask.dedup_scope_links),
+        )
+    )
+    task = result.unique().scalar_one_or_none()
+    if not task:
+        raise NotFoundError("MetaTask", task_id)
+    if current_user.role != "admin" and task.creator_id != current_user.id:
+        from app.utils.exceptions import PermissionDeniedError
+        raise PermissionDeniedError()
+
+    new_task = MetaTask(
+        name=f"{task.name}（副本）",
+        description=task.description,
+        creator_id=current_user.id,
+        prompt_template_id=task.prompt_template_id,
+        search_params=task.search_params,
+        schedule_cron=task.schedule_cron,
+        is_periodic=task.is_periodic,
+        is_active=True,
+    )
+    db.add(new_task)
+    await db.flush()
+
+    for link in task.llm_config_links:
+        db.add(MetaTaskLlmConfig(
+            meta_task_id=new_task.id,
+            llm_config_id=link.llm_config_id,
+            priority=link.priority,
+        ))
+
+    existing_dedup_ids = [link.dedup_meta_task_id for link in task.dedup_scope_links]
+    for dedup_id in existing_dedup_ids:
+        db.add(MetaTaskDedupScope(meta_task_id=new_task.id, dedup_meta_task_id=dedup_id))
+
+    db.add(MetaTaskDedupScope(meta_task_id=task.id, dedup_meta_task_id=new_task.id))
+    db.add(MetaTaskDedupScope(meta_task_id=new_task.id, dedup_meta_task_id=task.id))
+
+    await db.commit()
+    await db.refresh(new_task)
+    await log_operation(db, current_user.id, "clone", "meta_task", task_id,
+                        f"Cloned meta task {task.name} -> {new_task.name}")
+    return {"id": new_task.id, "name": new_task.name}
 
 
 class ExecuteMetaTaskBody(BaseModel):

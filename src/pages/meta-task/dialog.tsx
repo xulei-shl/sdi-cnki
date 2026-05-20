@@ -46,7 +46,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
   const [promptTemplateId, setPromptTemplateId] = useState<string>('')
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [dedupScopeMetaTaskId, setDedupScopeMetaTaskId] = useState<string>('')
+  const [dedupScopeMetaTaskIds, setDedupScopeMetaTaskIds] = useState<number[]>([])
   const [dedupCandidates, setDedupCandidates] = useState<DedupCandidate[]>([])
 
   const isEdit = !!editTask
@@ -73,7 +73,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
         setMaxExport(sp.max_export || 500)
         setLlmConfigIds(editTask.llm_configs?.map(c => c.id) || [])
         setPromptTemplateId(editTask.prompt_template_id?.toString() || '')
-        setDedupScopeMetaTaskId(editTask.dedup_scope_meta_task_id?.toString() || '')
+        setDedupScopeMetaTaskIds(editTask.dedup_scope_meta_task_ids || [])
       } else {
         setName('')
         setDescription('')
@@ -87,7 +87,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
         setMaxExport(500)
         setLlmConfigIds([])
         setPromptTemplateId('')
-        setDedupScopeMetaTaskId('')
+        setDedupScopeMetaTaskIds([])
       }
       setErrors({})
     }
@@ -143,7 +143,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
         search_params: searchParams,
         llm_config_ids: llmConfigIds,
         prompt_template_id: promptTemplateId ? parseInt(promptTemplateId) : null,
-        dedup_scope_meta_task_id: dedupScopeMetaTaskId ? parseInt(dedupScopeMetaTaskId) : null,
+        dedup_scope_meta_task_ids: dedupScopeMetaTaskIds,
       }
 
       if (isEdit) {
@@ -252,13 +252,29 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           <div>
             <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase">去重配置</h3>
             <div className="space-y-2">
-              <Label>去重范围（可选）</Label>
-              <Select value={dedupScopeMetaTaskId} onChange={(e) => setDedupScopeMetaTaskId(e.target.value)}>
-                <option value="">不选择（仅同模板下去重）</option>
-                {dedupCandidates.filter(c => c.id !== editTask?.id).map(c => (
-                  <option key={c.id} value={c.id}>{c.name}（{c.creator_name}）</option>
-                ))}
-              </Select>
+              <Label>去重范围（可选，多选）</Label>
+              <div className="border rounded-md p-3 space-y-1">
+                {dedupCandidates.filter(c => c.id !== editTask?.id).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">无可选任务模板</p>
+                ) : (
+                  dedupCandidates.filter(c => c.id !== editTask?.id).map(c => {
+                    const checked = dedupScopeMetaTaskIds.includes(c.id)
+                    return (
+                      <label key={c.id} className="flex items-center gap-2 text-sm py-0.5 cursor-pointer hover:text-primary">
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={() => {
+                            setDedupScopeMetaTaskIds(prev =>
+                              checked ? prev.filter(x => x !== c.id) : [...prev, c.id]
+                            )
+                          }}
+                        />
+                        {c.name}（{c.creator_name}）
+                      </label>
+                    )
+                  })
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">选择后，检索结果将与所选模板的所有历史数据比对去重，默认始终执行当前模板下的去重</p>
             </div>
           </div>

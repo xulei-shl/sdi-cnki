@@ -29,3 +29,4 @@ class MetaTask(Base):
     llm_config_links = relationship("MetaTaskLlmConfig", back_populates="meta_task", cascade="all, delete-orphan")
     task_instances = relationship("TaskInstance", back_populates="meta_task")
     dedup_scope_meta_task = relationship("MetaTask", remote_side=[id], foreign_keys=[dedup_scope_meta_task_id])
+    dedup_scope_links = relationship("MetaTaskDedupScope", back_populates="meta_task", foreign_keys="MetaTaskDedupScope.meta_task_id", cascade="all, delete-orphan")

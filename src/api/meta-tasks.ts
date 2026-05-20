@@ -36,3 +36,7 @@ export function executeMetaTask(id: number, autoRun: boolean = true) {
 export function getDedupCandidates() {
   return http.get<DedupCandidate[]>('/meta-tasks/dedup-candidates')
 }
+
+export function cloneMetaTask(id: number) {
+  return http.post<{ id: number; name: string }>(`/meta-tasks/${id}/clone`)
+}

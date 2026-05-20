@@ -7,7 +7,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { Pagination } from '@/components/ui/pagination'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
 import { toast } from 'sonner'
-import { getMetaTasks, getMetaTask, deleteMetaTask, executeMetaTask, type MetaTaskQuery } from '@/api/meta-tasks'
+import { getMetaTasks, getMetaTask, deleteMetaTask, executeMetaTask, cloneMetaTask, type MetaTaskQuery } from '@/api/meta-tasks'
 import { getLlmConfigs } from '@/api/llm-configs'
 import { getSystemPrompts } from '@/api/system-prompts'
 import { MetaTaskDialog } from './dialog'
@@ -35,6 +35,8 @@ export default function MetaTaskPage() {
   const [executing, setExecuting] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  const [cloningId, setCloningId] = useState<number | null>(null)
+  const [confirmCloneId, setConfirmCloneId] = useState<number | null>(null)
   const [llmConfigs, setLlmConfigs] = useState<LlmConfig[]>([])
   const [prompts, setPrompts] = useState<SystemPrompt[]>([])
 
@@ -110,6 +112,26 @@ export default function MetaTaskPage() {
       toast.error('删除失败，请检查是否有关联的实例')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const handleClone = (e: React.MouseEvent, id: number) => {
+    e.stopPropagation()
+    setConfirmCloneId(id)
+  }
+
+  const doClone = async () => {
+    if (!confirmCloneId) return
+    setCloningId(confirmCloneId)
+    setConfirmCloneId(null)
+    try {
+      await cloneMetaTask(confirmCloneId)
+      toast.success('复制成功')
+      fetchTasks()
+    } catch {
+      toast.error('复制失败')
+    } finally {
+      setCloningId(null)
     }
   }
 
@@ -218,6 +240,7 @@ export default function MetaTaskPage() {
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-3">
                       <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => openEdit(e, task)}>编辑</Button>
+                      <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleClone(e, task.id)}>复制</Button>
                       <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleExecute(e, task.id)}>运行</Button>
                       {task.execution_count === 0 && (
                         <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={(e) => handleDelete(e, task.id)}>删除</Button>
@@ -272,6 +295,16 @@ export default function MetaTaskPage() {
               <DetailRow label="提示词模板">{selectedTask.prompt_template_name || '未选择'}</DetailRow>
             </DetailSection>
 
+            <DetailSection label="去重配置">
+              {(selectedTask as any).dedup_scope_meta_task_names?.length ? (
+                (selectedTask as any).dedup_scope_meta_task_names.map((name: string, i: number) => (
+                  <DetailRow key={i} label={`范围 ${i + 1}`}>{name}</DetailRow>
+                ))
+              ) : (
+                <DetailRow label="参考范围">仅同模板下去重</DetailRow>
+              )}
+            </DetailSection>
+
             <DetailSection label="执行历史">
               {(selectedTask as any).recent_instances?.length ? (
                 (selectedTask as any).recent_instances.map((inst: any) => (
@@ -315,6 +348,15 @@ export default function MetaTaskPage() {
         variant="destructive"
         onConfirm={doDelete}
         loading={deletingId !== null}
+      />
+      <ConfirmDialog
+        open={!!confirmCloneId}
+        onOpenChange={(o) => { if (!o) setConfirmCloneId(null) }}
+        title="确认复制"
+        description="复制将创建一个新的任务模板，所有配置与原模板相同，并自动与原模板建立双向去重关系。"
+        confirmText="复制"
+        onConfirm={doClone}
+        loading={cloningId !== null}
       />
     </div>
   )
