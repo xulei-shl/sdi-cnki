@@ -35,6 +35,8 @@ systemctl status sdi-cnki-backend sdi-cnki-frontend --no-pager
 > **注意**：`alembic upgrade head` 是增量迁移命令，仅应用当前数据库中尚未运行过的迁移脚本，不会丢失已有数据。迁移脚本位于 `alembic/versions/` 目录下。首次全新部署时 `init_db()` 已包含表创建，无需手动执行 `alembic upgrade head`，但更新部署必须执行。
 >
 > **v2.1 新增迁移 005**：`user_notification_configs` 表（按账号独立 Webhook 配置），更新部署时需执行 `alembic upgrade head` 创建该表。
+>
+> **v2.2 新增专业检索模式**：仅新增 Python 模块和前端交互，**无数据库变更**，无需执行 `alembic upgrade head`。
 
 ## 前置检查
 

@@ -28,7 +28,10 @@ interface EditDialogProps {
 }
 
 export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDialogProps) {
+  const [searchMode, setSearchMode] = useState<'basic' | 'professional'>('basic')
   const [queries, setQueries] = useState<string[]>([''])
+  const [queryGroupA, setQueryGroupA] = useState<string[]>([''])
+  const [queryGroupB, setQueryGroupB] = useState<string[]>([''])
   const [yearFrom, setYearFrom] = useState<string>('')
   const [yearTo, setYearTo] = useState<string>('')
   const [dateRange, setDateRange] = useState('')
@@ -48,11 +51,39 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
     setQueries(prev => prev.map((q, i) => i === idx ? value : q))
   }
 
+  const addGroupA = () => setQueryGroupA(prev => [...prev, ''])
+  const removeGroupA = (idx: number) => {
+    if (queryGroupA.length <= 1) return
+    setQueryGroupA(prev => prev.filter((_, i) => i !== idx))
+  }
+  const updateGroupA = (idx: number, value: string) => {
+    setQueryGroupA(prev => prev.map((q, i) => i === idx ? value : q))
+  }
+
+  const addGroupB = () => setQueryGroupB(prev => [...prev, ''])
+  const removeGroupB = (idx: number) => {
+    if (queryGroupB.length <= 1) return
+    setQueryGroupB(prev => prev.filter((_, i) => i !== idx))
+  }
+  const updateGroupB = (idx: number, value: string) => {
+    setQueryGroupB(prev => prev.map((q, i) => i === idx ? value : q))
+  }
+
   useEffect(() => {
     if (open && instance) {
       const sp = instance.execution_params?.search_params || {}
-      const savedQueries = sp.queries?.length ? sp.queries : (sp.query ? [sp.query] : [''])
-      setQueries(savedQueries)
+      const mode = sp.search_mode === 'professional' ? 'professional' : 'basic'
+      setSearchMode(mode)
+      if (mode === 'professional') {
+        setQueryGroupA(sp.query_group_a?.length ? sp.query_group_a : [''])
+        setQueryGroupB(sp.query_group_b?.length ? sp.query_group_b : [''])
+        setQueries([''])
+      } else {
+        const savedQueries = sp.queries?.length ? sp.queries : (sp.query ? [sp.query] : [''])
+        setQueries(savedQueries)
+        setQueryGroupA([''])
+        setQueryGroupB([''])
+      }
       setYearFrom(sp.year_from?.toString() || '')
       setYearTo(sp.year_to?.toString() || '')
       setDateRange(sp.date_range || '')
@@ -66,8 +97,15 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
 
   const validate = () => {
     const errs: Record<string, string> = {}
-    const nonEmpty = queries.filter(q => q.trim())
-    if (nonEmpty.length === 0) errs.queries = '请至少输入一个检索词'
+    if (searchMode === 'professional') {
+      const ga = queryGroupA.filter(q => q.trim())
+      const gb = queryGroupB.filter(q => q.trim())
+      if (ga.length === 0) errs.queryGroupA = '主题A 至少需要1个检索词'
+      if (gb.length === 0) errs.queryGroupB = '主题B 至少需要1个检索词'
+    } else {
+      const nonEmpty = queries.filter(q => q.trim())
+      if (nonEmpty.length === 0) errs.queries = '请至少输入一个检索词'
+    }
     if (dateRange && (yearFrom || yearTo)) errs.dateRange = '与出版年份互斥'
     setErrors(errs)
     return Object.keys(errs).length === 0
@@ -78,11 +116,17 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
     setSaving(true)
     try {
       const searchParams: any = {
-        queries: queries.filter(q => q.trim()),
+        search_mode: searchMode,
         max_export: maxExport,
         core_only: coreOnly,
         synonym_extend: synonymExtend,
         // include_no_fulltext: includeNoFulltext,
+      }
+      if (searchMode === 'professional') {
+        searchParams.query_group_a = queryGroupA.filter(q => q.trim())
+        searchParams.query_group_b = queryGroupB.filter(q => q.trim())
+      } else {
+        searchParams.queries = queries.filter(q => q.trim())
       }
       if (dateRange) {
         searchParams.date_range = dateRange
@@ -117,36 +161,126 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
 
         <div className="space-y-6 py-2">
           <div className="space-y-2">
-            <Label>检索词 <span className="text-destructive">*</span></Label>
-            {queries.map((q, idx) => (
-              <div key={idx} className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-xs text-muted-foreground w-4">{idx + 1}</span>
-                  <svg className="w-3.5 h-3.5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-                <Input value={q} onChange={(e) => updateQuery(idx, e.target.value)} placeholder={`输入检索关键词 ${idx + 1}`} className="flex-1" />
-                <button
-                  type="button"
-                  onClick={() => removeQuery(idx)}
-                  className="text-muted-foreground hover:text-destructive shrink-0"
-                  disabled={queries.length <= 1}
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            ))}
-            <button type="button" onClick={addQuery} className="flex items-center gap-1 text-sm text-primary hover:text-primary/80">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              添加检索词
-            </button>
-            {errors.queries && <p className="text-xs text-destructive">{errors.queries}</p>}
+            <Label>检索模式</Label>
+            <div className="flex gap-1 border rounded-lg p-0.5 bg-muted/50 w-fit">
+              <button
+                type="button"
+                onClick={() => setSearchMode('basic')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${searchMode === 'basic' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                普通检索
+              </button>
+              <button
+                type="button"
+                onClick={() => setSearchMode('professional')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${searchMode === 'professional' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                专业检索
+              </button>
+            </div>
           </div>
+
+          {searchMode === 'professional' ? (
+            <div className="space-y-4 border rounded-lg p-3 bg-muted/20">
+              <div className="space-y-2">
+                <Label className="text-blue-600 font-semibold">主题A 关键词组</Label>
+                <p className="text-xs text-muted-foreground">同义词/术语集合（如：阅读推广、全民阅读）</p>
+                {queryGroupA.map((q, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-4 shrink-0">{idx + 1}</span>
+                    <Input value={q} onChange={(e) => updateGroupA(idx, e.target.value)} placeholder={`主题A 关键词 ${idx + 1}`} className="flex-1" />
+                    <button
+                      type="button"
+                      onClick={() => removeGroupA(idx)}
+                      className="text-muted-foreground hover:text-destructive shrink-0"
+                      disabled={queryGroupA.length <= 1}
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+                <button type="button" onClick={addGroupA} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  添加关键词
+                </button>
+                {errors.queryGroupA && <p className="text-xs text-destructive">{errors.queryGroupA}</p>}
+              </div>
+
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span className="w-6 h-px bg-border flex-1" />
+                <span className="font-medium text-foreground">AND</span>
+                <span className="w-6 h-px bg-border flex-1" />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-orange-600 font-semibold">主题B 关键词组</Label>
+                <p className="text-xs text-muted-foreground">同义词/术语集合（如：AI、大模型、AIGC）</p>
+                {queryGroupB.map((q, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-4 shrink-0">{idx + 1}</span>
+                    <Input value={q} onChange={(e) => updateGroupB(idx, e.target.value)} placeholder={`主题B 关键词 ${idx + 1}`} className="flex-1" />
+                    <button
+                      type="button"
+                      onClick={() => removeGroupB(idx)}
+                      className="text-muted-foreground hover:text-destructive shrink-0"
+                      disabled={queryGroupB.length <= 1}
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+                <button type="button" onClick={addGroupB} className="flex items-center gap-1 text-sm text-orange-600 hover:text-orange-700">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  添加关键词
+                </button>
+                {errors.queryGroupB && <p className="text-xs text-destructive">{errors.queryGroupB}</p>}
+              </div>
+
+              <div className="text-xs text-muted-foreground bg-muted/40 rounded px-2 py-1.5">
+                检索逻辑：<code className="text-foreground">(SU=A×B) OR (TKA=A×B)</code>，每组内关键词用 OR 连接，两组间用 AND 连接
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>检索词 <span className="text-destructive">*</span></Label>
+              {queries.map((q, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-xs text-muted-foreground w-4">{idx + 1}</span>
+                    <svg className="w-3.5 h-3.5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                  <Input value={q} onChange={(e) => updateQuery(idx, e.target.value)} placeholder={`输入检索关键词 ${idx + 1}`} className="flex-1" />
+                  <button
+                    type="button"
+                    onClick={() => removeQuery(idx)}
+                    className="text-muted-foreground hover:text-destructive shrink-0"
+                    disabled={queries.length <= 1}
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+              <button type="button" onClick={addQuery} className="flex items-center gap-1 text-sm text-primary hover:text-primary/80">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                添加检索词
+              </button>
+              {errors.queries && <p className="text-xs text-destructive">{errors.queries}</p>}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">

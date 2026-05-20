@@ -41,19 +41,36 @@ async def _validate_prompt_access(
 
 
 def validate_search_params(params: dict) -> None:
-    queries = params.get("queries")
-    query = params.get("query")
-    if not queries and not query:
-        raise ValidationError("queries 或 query 为必填项")
-    if queries:
-        if not isinstance(queries, list) or not all(isinstance(q, str) for q in queries):
-            raise ValidationError("queries 必须是非空字符串数组")
-        queries = [q for q in queries if q.strip()]
-        if not queries:
-            raise ValidationError("queries 至少需要一个非空检索词")
-        params["queries"] = queries
+    mode = params.get("search_mode", "basic")
+    if mode == "professional":
+        ga = params.get("query_group_a")
+        gb = params.get("query_group_b")
+        if not ga or not isinstance(ga, list) or not all(isinstance(q, str) for q in ga):
+            raise ValidationError("query_group_a 必须是非空字符串数组")
+        if not gb or not isinstance(gb, list) or not all(isinstance(q, str) for q in gb):
+            raise ValidationError("query_group_b 必须是非空字符串数组")
+        ga = [q.strip() for q in ga if q.strip()]
+        gb = [q.strip() for q in gb if q.strip()]
+        if not ga:
+            raise ValidationError("query_group_a 至少需要一个非空检索词")
+        if not gb:
+            raise ValidationError("query_group_b 至少需要一个非空检索词")
+        params["query_group_a"] = ga
+        params["query_group_b"] = gb
     else:
-        params["queries"] = [query.strip()]
+        queries = params.get("queries")
+        query = params.get("query")
+        if not queries and not query:
+            raise ValidationError("queries 或 query 为必填项")
+        if queries:
+            if not isinstance(queries, list) or not all(isinstance(q, str) for q in queries):
+                raise ValidationError("queries 必须是非空字符串数组")
+            queries = [q for q in queries if q.strip()]
+            if not queries:
+                raise ValidationError("queries 至少需要一个非空检索词")
+            params["queries"] = queries
+        else:
+            params["queries"] = [query.strip()]
     max_export = params.get("max_export")
     if max_export is None:
         raise ValidationError("max_export 为必填项")

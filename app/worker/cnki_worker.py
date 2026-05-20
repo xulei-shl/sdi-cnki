@@ -21,6 +21,7 @@ from app.models.task_instance import TaskInstance
 from app.models.task_result import TaskResult
 from app.services.cnki.browser import CnkiBrowser
 from app.services.cnki.interactor import CnkiInteractor
+from app.services.cnki.professional_interactor import ProfessionalCnkiInteractor
 from app.services.cnki.exceptions import NoResultsError, CnkiSearchError
 from app.services.excel_parser import parse_excel_to_records, CNKI_COLUMN_MAP
 from app.services.dedup_service import batch_check_and_mark
@@ -50,13 +51,24 @@ def _run_search_sync(
     instance_no: str,
     uploads_dir: str,
 ) -> dict:
-    """Run one or more keyword searches in a single browser session, then merge results."""
+    """Run search in a single browser session.
+
+    If search_mode == 'professional' uses ProfessionalCnkiInteractor (single search).
+    Otherwise uses CnkiInteractor per-keyword loop with merge.
+    """
+    base_dir = Path(uploads_dir) / instance_no
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    if params.get("search_mode") == "professional":
+        with CnkiBrowser(headless=True) as browser:
+            browser.goto(CnkiBrowser.HOME_URL)
+            interactor = ProfessionalCnkiInteractor(browser, base_dir)
+            result = interactor.execute_search(params)
+        return result
+
     queries = _extract_queries(params)
     if not queries:
         return {"final_file": None, "total": 0, "exported": 0, "batches": [], "no_results": True}
-
-    base_dir = Path(uploads_dir) / instance_no
-    base_dir.mkdir(parents=True, exist_ok=True)
 
     query_results: list[dict] = []
     total_all = 0
