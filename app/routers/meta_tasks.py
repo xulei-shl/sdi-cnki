@@ -41,6 +41,19 @@ async def _validate_prompt_access(
 
 
 def validate_search_params(params: dict) -> None:
+    queries = params.get("queries")
+    query = params.get("query")
+    if not queries and not query:
+        raise ValidationError("queries 或 query 为必填项")
+    if queries:
+        if not isinstance(queries, list) or not all(isinstance(q, str) for q in queries):
+            raise ValidationError("queries 必须是非空字符串数组")
+        queries = [q for q in queries if q.strip()]
+        if not queries:
+            raise ValidationError("queries 至少需要一个非空检索词")
+        params["queries"] = queries
+    else:
+        params["queries"] = [query.strip()]
     max_export = params.get("max_export")
     if max_export is None:
         raise ValidationError("max_export 为必填项")

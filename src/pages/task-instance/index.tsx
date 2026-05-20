@@ -320,7 +320,7 @@ export default function TaskInstancePage() {
             </DetailSection>
 
             <DetailSection label="检索参数">
-              <DetailRow label="检索词">{(selectedInstance as any).execution_params?.search_params?.query || '-'}</DetailRow>
+              <DetailRow label="检索词">{(() => { const sp = (selectedInstance as any).execution_params?.search_params || {}; const qs = sp.queries?.length ? sp.queries : (sp.query ? [sp.query] : []); return qs.length ? qs.join(' / ') : '-'; })()}</DetailRow>
               <DetailRow label="起始年份">{(selectedInstance as any).execution_params?.search_params?.year_from ?? '-'}</DetailRow>
               <DetailRow label="结束年份">{(selectedInstance as any).execution_params?.search_params?.year_to ?? '-'}</DetailRow>
               <DetailRow label="更新时间范围">{DATE_RANGE_LABELS[(selectedInstance as any).execution_params?.search_params?.date_range as string] || '-'}</DetailRow>

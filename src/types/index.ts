@@ -43,7 +43,8 @@ export interface DedupCandidate {
 }
 
 export interface SearchParams {
-  query: string
+  query?: string
+  queries?: string[]
   year_from?: number | null
   year_to?: number | null
   date_range?: string | null

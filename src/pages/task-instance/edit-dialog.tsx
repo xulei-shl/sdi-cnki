@@ -28,7 +28,7 @@ interface EditDialogProps {
 }
 
 export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDialogProps) {
-  const [query, setQuery] = useState('')
+  const [queries, setQueries] = useState<string[]>([''])
   const [yearFrom, setYearFrom] = useState<string>('')
   const [yearTo, setYearTo] = useState<string>('')
   const [dateRange, setDateRange] = useState('')
@@ -39,10 +39,20 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  const addQuery = () => setQueries(prev => [...prev, ''])
+  const removeQuery = (idx: number) => {
+    if (queries.length <= 1) return
+    setQueries(prev => prev.filter((_, i) => i !== idx))
+  }
+  const updateQuery = (idx: number, value: string) => {
+    setQueries(prev => prev.map((q, i) => i === idx ? value : q))
+  }
+
   useEffect(() => {
     if (open && instance) {
       const sp = instance.execution_params?.search_params || {}
-      setQuery(sp.query || '')
+      const savedQueries = sp.queries?.length ? sp.queries : (sp.query ? [sp.query] : [''])
+      setQueries(savedQueries)
       setYearFrom(sp.year_from?.toString() || '')
       setYearTo(sp.year_to?.toString() || '')
       setDateRange(sp.date_range || '')
@@ -56,7 +66,8 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
 
   const validate = () => {
     const errs: Record<string, string> = {}
-    if (!query.trim()) errs.query = '请输入检索词'
+    const nonEmpty = queries.filter(q => q.trim())
+    if (nonEmpty.length === 0) errs.queries = '请至少输入一个检索词'
     if (dateRange && (yearFrom || yearTo)) errs.dateRange = '与出版年份互斥'
     setErrors(errs)
     return Object.keys(errs).length === 0
@@ -67,7 +78,7 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
     setSaving(true)
     try {
       const searchParams: any = {
-        query: query.trim(),
+        queries: queries.filter(q => q.trim()),
         max_export: maxExport,
         core_only: coreOnly,
         synonym_extend: synonymExtend,
@@ -107,8 +118,34 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
         <div className="space-y-6 py-2">
           <div className="space-y-2">
             <Label>检索词 <span className="text-destructive">*</span></Label>
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="输入检索关键词" />
-            {errors.query && <p className="text-xs text-destructive">{errors.query}</p>}
+            {queries.map((q, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-xs text-muted-foreground w-4">{idx + 1}</span>
+                  <svg className="w-3.5 h-3.5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+                <Input value={q} onChange={(e) => updateQuery(idx, e.target.value)} placeholder={`输入检索关键词 ${idx + 1}`} className="flex-1" />
+                <button
+                  type="button"
+                  onClick={() => removeQuery(idx)}
+                  className="text-muted-foreground hover:text-destructive shrink-0"
+                  disabled={queries.length <= 1}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+            <button type="button" onClick={addQuery} className="flex items-center gap-1 text-sm text-primary hover:text-primary/80">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              添加检索词
+            </button>
+            {errors.queries && <p className="text-xs text-destructive">{errors.queries}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

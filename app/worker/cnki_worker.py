@@ -6,6 +6,8 @@ import asyncio
 import json
 from pathlib import Path
 
+import pandas as pd
+
 from app.utils import timezone
 from typing import Any
 
@@ -32,24 +34,73 @@ settings = get_settings()
 MAX_AUTO_LLM_TRIGGER = 2000
 
 
+def _extract_queries(params: dict) -> list[str]:
+    """Extract queries array from search_params with backward compat."""
+    queries = params.get("queries")
+    if queries and isinstance(queries, list):
+        return [q.strip() for q in queries if q.strip()]
+    single = params.get("query")
+    if single and isinstance(single, str) and single.strip():
+        return [single.strip()]
+    return []
+
+
 def _run_search_sync(
     params: dict,
-    instance_id: int,
     instance_no: str,
     uploads_dir: str,
 ) -> dict:
-    """Sync function runs in thread pool. Returns search results."""
-    output_dir = Path(uploads_dir) / instance_no
-    output_dir.mkdir(parents=True, exist_ok=True)
+    """Run one or more keyword searches in a single browser session, then merge results."""
+    queries = _extract_queries(params)
+    if not queries:
+        return {"final_file": None, "total": 0, "exported": 0, "batches": [], "no_results": True}
+
+    base_dir = Path(uploads_dir) / instance_no
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    query_results: list[dict] = []
+    total_all = 0
+    exported_all = 0
 
     with CnkiBrowser(headless=True) as browser:
         browser.goto(CnkiBrowser.HOME_URL)
-        try:
-            interactor = CnkiInteractor(browser, output_dir)
-            result = interactor.execute_search(params)
-            return result
-        except NoResultsError:
-            return {"final_file": None, "total": 0, "exported": 0, "batches": [], "no_results": True}
+        for i, q in enumerate(queries):
+            q_dir = base_dir / f"q{i}"
+            q_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                interactor = CnkiInteractor(browser, q_dir)
+                result = interactor.execute_search({**params, "query": q})
+                if result.get("final_file"):
+                    query_results.append(result)
+                    total_all += result.get("total", 0)
+                    exported_all += result.get("exported", 0)
+            except NoResultsError:
+                continue
+
+    if not query_results:
+        return {"final_file": None, "total": 0, "exported": 0, "batches": [], "no_results": True}
+
+    if len(query_results) == 1:
+        return query_results[0]
+
+    frames = []
+    for qr in query_results:
+        fp = qr.get("final_file")
+        if fp and Path(fp).exists():
+            frames.append(pd.read_excel(fp, engine="openpyxl").fillna(""))
+
+    if not frames:
+        return {"final_file": None, "total": 0, "exported": 0, "batches": [], "no_results": True}
+
+    merged_path = base_dir / f"{instance_no}_merged.xlsx"
+    pd.concat(frames, ignore_index=True).to_excel(merged_path, index=False, engine="openpyxl")
+
+    return {
+        "final_file": str(merged_path),
+        "total": total_all,
+        "exported": exported_all,
+        "batches": query_results,
+    }
 
 
 async def process_search_results(
@@ -167,7 +218,6 @@ async def run_cnki_search(
             None,
             _run_search_sync,
             search_params,
-            instance_id,
             instance_no,
             settings.uploads_dir,
         )
