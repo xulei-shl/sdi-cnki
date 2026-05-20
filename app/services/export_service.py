@@ -61,6 +61,9 @@ async def create_export_package(db: AsyncSession, export_task: ExportTask) -> st
         with open(metadata_path, "w", encoding="utf-8") as f:
             json.dump(metadata, f, ensure_ascii=False, indent=2)
 
+        enw_path = os.path.join(tmp_dir, "references.enw")
+        _generate_enw(task_results, enw_path)
+
         pdfs_dir = os.path.join(tmp_dir, "pdfs")
         os.makedirs(pdfs_dir, exist_ok=True)
         pdf_count = _collect_pdfs(task_results, pdfs_dir)
@@ -211,6 +214,70 @@ def _build_metadata(instance: TaskInstance, task_results: list[TaskResult]) -> d
         },
         "search_params": search_params,
     }
+
+
+def _generate_enw(task_results: list[TaskResult], output_path: str) -> None:
+    """生成 Zotero 可导入的 .enw 引文文件，仅处理审核通过的记录。"""
+    entries: list[str] = []
+    for tr in task_results:
+        if tr.is_passed is not True:
+            continue
+
+        lines: list[str] = []
+        lines.append("%0 Journal Article")
+
+        if tr.authors:
+            for author in tr.authors.split(";"):
+                author = author.strip()
+                if author:
+                    lines.append(f"%A {author}")
+
+        if tr.organ:
+            lines.append(f"%+ {tr.organ}")
+
+        if tr.title:
+            lines.append(f"%T {tr.title}")
+
+        if tr.source_journal:
+            lines.append(f"%J {tr.source_journal}")
+
+        if tr.publish_year:
+            lines.append(f"%D {tr.publish_year}")
+
+        if tr.volume:
+            lines.append(f"%V {tr.volume}")
+
+        if tr.issue:
+            lines.append(f"%N {tr.issue}")
+
+        if tr.keywords:
+            lines.append(f"%K {tr.keywords}")
+
+        if tr.abstract:
+            lines.append(f"%X {tr.abstract}")
+
+        if tr.pages:
+            lines.append(f"%P {tr.pages}")
+
+        if tr.issn:
+            lines.append(f"%@ {tr.issn}")
+
+        if tr.original_url:
+            lines.append(f"%U {tr.original_url}")
+
+        if tr.doi:
+            lines.append(f"%R {tr.doi}")
+
+        lines.append("%W CNKI")
+
+        entries.append("\n".join(lines))
+
+    content = "\n\n".join(entries)
+    if content:
+        content += "\n"
+
+    with open(output_path, "w", encoding="utf-8-sig") as f:
+        f.write(content)
 
 
 def _collect_pdfs(task_results: list[TaskResult], pdfs_dir: str) -> int:

@@ -55,7 +55,7 @@ API 文档：http://localhost:8456/docs
 - **LLM 批量分析**：多 Provider 轮询、4 级 JSON 解析容错、并发控制
 - **人工审核**：单条/批量通过/拒绝、相关性评分可视化
 - **PDF 下载**：哲舍科→万方→CNKI 三来源轮询、引用计数跨实例复用
-- **数据导出**：异步 ZIP 打包（含 results.xlsx + analysis_results.xlsx + PDFs）
+- **数据导出**：异步 ZIP 打包（含 results.xlsx + analysis_results.xlsx + references.enw + PDFs）
 - **实时推送**：SSE 进度（检索/分析/下载），企业微信 Webhook 通知
 - **权限控制**：Admin/User 双角色，动态路由 + 按钮级鉴权
 
