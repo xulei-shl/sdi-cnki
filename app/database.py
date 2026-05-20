@@ -72,7 +72,6 @@ async def _seed_default_configs(conn):
     if result.scalar() > 0:
         return
     defaults = [
-        ("webhook_enterprise_wechat", "", "企业微信群机器人 Webhook URL"),
         ("cnki_search_timeout", "1800", "CNKI 检索超时（秒）"),
         ("llm_analysis_batch_size", "5", "LLM 批量分析并发数"),
         ("cnki_queue_concurrency", "1", "CNKI 检索队列并发数"),

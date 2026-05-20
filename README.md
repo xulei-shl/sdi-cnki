@@ -56,7 +56,7 @@ API 文档：http://localhost:8456/docs
 - **人工审核**：单条/批量通过/拒绝、相关性评分可视化
 - **PDF 下载**：哲舍科→万方→CNKI 三来源轮询、引用计数跨实例复用
 - **数据导出**：异步 ZIP 打包（含 results.xlsx + analysis_results.xlsx + references.enw + PDFs）
-- **实时推送**：SSE 进度（检索/分析/下载），企业微信 Webhook 通知
+- **实时推送**：SSE 进度（检索/分析/下载），企业微信 Webhook 通知（按账号独立配置）
 - **权限控制**：Admin/User 双角色，动态路由 + 按钮级鉴权
 
 ## Hiagent AI 助手浮窗
@@ -148,7 +148,7 @@ pending → running → search_completed → analyzing
 → analyzing_completed → download_queued → downloading → completed
 ```
 
-任意阶段失败 → `failed`，通过 SSE 和企微 Webhook 即时通知。
+任意阶段失败 → `failed`，通过 SSE 和企微 Webhook（按账号独立配置）即时通知。
 
 ## 生产部署（Ubuntu + systemd）
 

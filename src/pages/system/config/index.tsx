@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { toast } from 'sonner'
-import { getSystemConfigs, updateSystemConfig, testWebhookConfig } from '@/api/system'
+import { getSystemConfigs, updateSystemConfig } from '@/api/system'
 
 interface ConfigEntry {
   key: string
@@ -18,7 +18,6 @@ export default function SystemConfigPage() {
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState<Record<string, string>>({})
   const [filterKey, setFilterKey] = useState('')
-  const [testingWebhook, setTestingWebhook] = useState(false)
 
   const fetchData = async () => {
     setLoading(true)
@@ -36,9 +35,10 @@ export default function SystemConfigPage() {
 
   useEffect(() => { fetchData() }, [])
 
-  const filteredConfigs = filterKey
+  const filteredConfigs = (filterKey
     ? configs.filter(c => c.key.toLowerCase().includes(filterKey.toLowerCase()))
     : configs
+  ).filter(c => c.key !== 'webhook_enterprise_wechat')
 
   const handleSave = async (key: string) => {
     try {
@@ -50,22 +50,9 @@ export default function SystemConfigPage() {
     }
   }
 
-  const handleTestWebhook = async (key: string) => {
-    setTestingWebhook(true)
-    try {
-      await testWebhookConfig(key, editing[key])
-      toast.success('测试通知发送成功')
-    } catch {
-      toast.error('测试发送失败')
-    } finally {
-      setTestingWebhook(false)
-    }
-  }
-
   const formatDate = (d: string) => d?.slice(0, 16).replace('T', ' ') || '-'
 
   const configLabels: Record<string, string> = {
-    webhook_enterprise_wechat: '企业微信 Webhook URL',
     cnki_search_timeout: 'CNKI 检索超时（秒）',
     llm_analysis_batch_size: 'LLM 分析并发数',
     cnki_queue_concurrency: 'CNKI 队列并发数',
@@ -118,19 +105,7 @@ export default function SystemConfigPage() {
                   {formatDate(cfg.updated_at)}
                 </TableCell>
                 <TableCell className="text-right">
-                  <div className="flex justify-end gap-3">
-                    {cfg.key === 'webhook_enterprise_wechat' && (
-                      <Button
-                        variant="link"
-                        className="h-auto p-0 font-normal"
-                        onClick={() => handleTestWebhook(cfg.key)}
-                        disabled={testingWebhook}
-                      >
-                        测试
-                      </Button>
-                    )}
-                    <Button variant="link" className="h-auto p-0 font-normal" onClick={() => handleSave(cfg.key)}>保存</Button>
-                  </div>
+                  <Button variant="link" className="h-auto p-0 font-normal" onClick={() => handleSave(cfg.key)}>保存</Button>
                 </TableCell>
               </TableRow>
             ))}

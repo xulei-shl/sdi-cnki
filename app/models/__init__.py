@@ -15,3 +15,4 @@ from app.models.pdf_file import PdfFile
 from app.models.operation_log import OperationLog
 from app.models.task_queue import TaskQueueItem
 from app.models.export_task import ExportTask
+from app.models.user_notification_config import UserNotificationConfig

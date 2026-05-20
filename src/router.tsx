@@ -9,6 +9,7 @@ import LlmConfigPage from '@/pages/system/llm-config'
 import PromptPage from '@/pages/prompt'
 import PromptTemplatePage from '@/pages/system/prompt-template'
 import SystemConfigPage from '@/pages/system/config'
+import UserSettingsPage from '@/pages/user/settings'
 import NotFoundPage from '@/pages/error/404'
 import ForbiddenPage from '@/pages/error/403'
 
@@ -26,6 +27,7 @@ export const router = createBrowserRouter([
       { path: 'task-instances', element: <TaskInstancePage /> },
       { path: 'task-instances/:id/results', element: <TaskResultPage /> },
       { path: 'prompts', element: <PromptPage /> },
+      { path: 'settings', element: <UserSettingsPage /> },
       { path: 'system/users', element: <UserManagePage /> },
       { path: 'system/llm-configs', element: <LlmConfigPage /> },
 

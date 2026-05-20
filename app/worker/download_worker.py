@@ -141,6 +141,7 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
 
         from app.services.wecom_notifier import send_notification
         await send_notification(db, {
+            "user_id": instance.creator.id if instance.creator else None,
             "instance_id": instance_id,
             "stage": "下载",
             "meta_task_name": instance.meta_task.name if instance.meta_task else "",
@@ -168,6 +169,7 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
         try:
             from app.services.wecom_notifier import send_notification
             await send_notification(db, {
+                "user_id": instance.creator.id if instance.creator else None,
                 "stage": "下载",
                 "meta_task_name": instance.meta_task.name if instance.meta_task else "",
                 "username": instance.creator.username if instance.creator else "",

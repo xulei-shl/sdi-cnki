@@ -6,22 +6,23 @@ import httpx
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.system_config import SystemConfig
+from app.models.user_notification_config import UserNotificationConfig
 from app.utils.logging import get_logger
 
 logger = get_logger("wecom_notifier")
 
-CONFIG_KEY = "webhook_enterprise_wechat"
 
-
-async def load_webhook_url(db: AsyncSession) -> Optional[str]:
-    """从 system_configs 表读取企微 Webhook URL。"""
+async def load_webhook_url(db: AsyncSession, user_id: int) -> Optional[str]:
+    """从 user_notification_configs 表读取指定用户的 Webhook URL。"""
     result = await db.execute(
-        select(SystemConfig).where(SystemConfig.key == CONFIG_KEY)
+        select(UserNotificationConfig).where(
+            UserNotificationConfig.user_id == user_id,
+            UserNotificationConfig.enabled == True,
+        )
     )
     config = result.scalar_one_or_none()
-    if config and config.value:
-        return config.value.strip()
+    if config and config.webhook_url:
+        return config.webhook_url.strip()
     return None
 
 
@@ -149,12 +150,24 @@ def _build_markdown(instance_data: dict) -> str:
     return "\n".join(parts)
 
 
-async def send_notification(db: AsyncSession, instance_data: dict) -> None:
-    """向企业微信群发送任务通知。失败时不抛出异常，仅记录日志。"""
+async def send_notification(db: AsyncSession, instance_data: dict, user_id: int | None = None) -> None:
+    """向企业微信群发送任务通知。失败时不抛出异常，仅记录日志。
+
+    Args:
+        db: 数据库会话
+        instance_data: 任务实例数据
+        user_id: 用户ID，用于查找该用户的 webhook 配置。为 None 时从 instance_data 中取。
+    """
     try:
-        webhook_url = await load_webhook_url(db)
+        if user_id is None:
+            user_id = instance_data.get("user_id")
+        if not user_id:
+            logger.info("未指定用户，跳过通知")
+            return
+
+        webhook_url = await load_webhook_url(db, user_id)
         if not webhook_url:
-            logger.info("Webhook URL 未配置，跳过通知")
+            logger.info(f"用户 {user_id} 未配置 Webhook，跳过通知")
             return
 
         instance_id = instance_data.get("instance_id")
