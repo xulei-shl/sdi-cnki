@@ -152,7 +152,7 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>编辑检索参数</DialogTitle>
         </DialogHeader>
