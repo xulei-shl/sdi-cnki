@@ -404,6 +404,42 @@ async def list_instance_results(
                 DownloadResult.task_instance_id == instance_id,
             ).subquery()
             where.append(TaskResult.id.in_(select(dr_subq.c)))
+    if min_score is not None:
+        from app.models.llm_analysis_result import LlmAnalysisResult
+        score_subq = (
+            select(LlmAnalysisResult.task_result_id)
+            .where(
+                LlmAnalysisResult.task_instance_id == instance_id,
+                LlmAnalysisResult.parsed_result.isnot(None),
+                func.json_extract(LlmAnalysisResult.parsed_result, '$.relevance_score') >= min_score,
+            )
+            .subquery()
+        )
+        where.append(TaskResult.id.in_(select(score_subq.c)))
+    if analysis_result == "passed":
+        from app.models.llm_analysis_result import LlmAnalysisResult
+        passed_subq = (
+            select(LlmAnalysisResult.task_result_id)
+            .where(
+                LlmAnalysisResult.task_instance_id == instance_id,
+                LlmAnalysisResult.parsed_result.isnot(None),
+                func.json_extract(LlmAnalysisResult.parsed_result, '$.is_target_topic') == 1,
+            )
+            .subquery()
+        )
+        where.append(TaskResult.id.in_(select(passed_subq.c)))
+    elif analysis_result == "rejected":
+        from app.models.llm_analysis_result import LlmAnalysisResult
+        rejected_subq = (
+            select(LlmAnalysisResult.task_result_id)
+            .where(
+                LlmAnalysisResult.task_instance_id == instance_id,
+                LlmAnalysisResult.parsed_result.isnot(None),
+                func.json_extract(LlmAnalysisResult.parsed_result, '$.is_target_topic') == 0,
+            )
+            .subquery()
+        )
+        where.append(TaskResult.id.in_(select(rejected_subq.c)))
     stmt = (
         select(TaskResult)
         .where(*where)
@@ -421,17 +457,6 @@ async def list_instance_results(
     items = []
     for row in rows:
         parsed = json.loads(row.llm_analysis.parsed_result) if row.llm_analysis and row.llm_analysis.parsed_result else None
-        score = None
-        if parsed:
-            score = parsed.get("relevance_score")
-        if min_score is not None and (score is None or score < min_score):
-            continue
-        if analysis_result == "passed":
-            if parsed is None or not parsed.get("is_target_topic"):
-                continue
-        elif analysis_result == "rejected":
-            if parsed is None or parsed.get("is_target_topic") is not False:
-                continue
         items.append({
             "id": row.id,
             "title": row.title,
