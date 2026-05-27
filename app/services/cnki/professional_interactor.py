@@ -86,11 +86,17 @@ class ProfessionalCnkiInteractor:
 
         a_expr = " + ".join(_quote(kw) for kw in group_a)
         b_expr = " + ".join(_quote(kw) for kw in group_b)
-        return (
-            f"(SU=({a_expr}) AND SU=({b_expr}))"
-            f" OR "
-            f"(TKA=({a_expr}) AND TKA=({b_expr}))"
-        )
+
+        if group_a and group_b:
+            return (
+                f"(SU=({a_expr}) AND SU=({b_expr}))"
+                f" OR "
+                f"(TKA=({a_expr}) AND TKA=({b_expr}))"
+            )
+        elif group_a:
+            return f"SU=({a_expr})"
+        else:
+            return f"TKA=({b_expr})"
 
     def _switch_to_professional_tab(self) -> None:
         deadline = _time.time() + 15

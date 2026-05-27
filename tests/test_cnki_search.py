@@ -86,6 +86,10 @@ PROFESSIONAL_COMBOS: list[dict] = [
     {"search_mode": "professional", "query_group_a": ["阅读服务", "智慧阅读"], "query_group_b": ["LLM", "多模态"], "max_export": 10, "synonym_extend": True},
     {"search_mode": "professional", "query_group_a": ["科技期刊", "学术期刊"], "query_group_b": ["开放获取", "OA"], "max_export": 10, "date_range": "year"},
     {"search_mode": "professional", "query_group_a": ["知识服务"], "query_group_b": ["AI", "大语言模型"], "max_export": 10, "core_only": True, "year_from": 2024},
+    {"search_mode": "professional", "query_group_a": ["数字经济"], "max_export": 10},
+    {"search_mode": "professional", "query_group_b": ["数字化转型"], "max_export": 10},
+    {"search_mode": "professional", "query_group_a": ["人工智能", "机器学习"], "max_export": 10, "synonym_extend": True},
+    {"search_mode": "professional", "query_group_b": ["出版融合", "媒体融合"], "max_export": 10, "core_only": True},
 ]
 
 
@@ -152,8 +156,8 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.professional:
-        if not args.group_a or not args.group_b:
-            parser.error("专业检索需要 --group-a 和 --group-b")
+        if not args.group_a and not args.group_b:
+            parser.error("专业检索需要 --group-a 和/或 --group-b")
         params: dict = {
             "search_mode": "professional",
             "query_group_a": args.group_a,

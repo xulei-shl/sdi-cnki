@@ -101,8 +101,9 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
     if (searchMode === 'professional') {
       const ga = queryGroupA.filter(q => q.trim())
       const gb = queryGroupB.filter(q => q.trim())
-      if (ga.length === 0) errs.queryGroupA = '主题A 至少需要1个检索词'
-      if (gb.length === 0) errs.queryGroupB = '主题B 至少需要1个检索词'
+      if (ga.length === 0 && gb.length === 0) {
+        errs.queryGroupA = '主题A 或 主题B 至少需要1个检索词'
+      }
     } else {
       const nonEmpty = queries.filter(q => q.trim())
       if (nonEmpty.length === 0) errs.queries = '请至少输入一个检索词'

@@ -45,18 +45,18 @@ def validate_search_params(params: dict) -> None:
     if mode == "professional":
         ga = params.get("query_group_a")
         gb = params.get("query_group_b")
-        if not ga or not isinstance(ga, list) or not all(isinstance(q, str) for q in ga):
-            raise ValidationError("query_group_a 必须是非空字符串数组")
-        if not gb or not isinstance(gb, list) or not all(isinstance(q, str) for q in gb):
-            raise ValidationError("query_group_b 必须是非空字符串数组")
-        ga = [q.strip() for q in ga if q.strip()]
-        gb = [q.strip() for q in gb if q.strip()]
-        if not ga:
-            raise ValidationError("query_group_a 至少需要一个非空检索词")
-        if not gb:
-            raise ValidationError("query_group_b 至少需要一个非空检索词")
-        params["query_group_a"] = ga
-        params["query_group_b"] = gb
+        if ga is not None:
+            if not isinstance(ga, list) or not all(isinstance(q, str) for q in ga):
+                raise ValidationError("query_group_a 必须是非空字符串数组")
+        if gb is not None:
+            if not isinstance(gb, list) or not all(isinstance(q, str) for q in gb):
+                raise ValidationError("query_group_b 必须是非空字符串数组")
+        ga_clean = [q.strip() for q in ga if q.strip()] if ga else []
+        gb_clean = [q.strip() for q in gb if q.strip()] if gb else []
+        if not ga_clean and not gb_clean:
+            raise ValidationError("query_group_a 和 query_group_b 至少需要一组非空检索词")
+        params["query_group_a"] = ga_clean
+        params["query_group_b"] = gb_clean
     else:
         queries = params.get("queries")
         query = params.get("query")
