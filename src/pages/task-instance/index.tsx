@@ -341,7 +341,23 @@ export default function TaskInstancePage() {
             </DetailSection>
 
             <DetailSection label="检索参数">
-              <DetailRow label="检索词">{(() => { const sp = (selectedInstance as any).execution_params?.search_params || {}; const qs = sp.queries?.length ? sp.queries : (sp.query ? [sp.query] : []); return qs.length ? qs.join(' / ') : '-'; })()}</DetailRow>
+{(() => {
+  const sp = (selectedInstance as any).execution_params?.search_params || {};
+  if (sp.search_mode === 'professional') {
+    const a: string[] = sp.query_group_a?.filter(Boolean) || [];
+    const b: string[] = sp.query_group_b?.filter(Boolean) || [];
+    const su: string[] = [];
+    const tka: string[] = [];
+    if (a.length) { su.push(`SU=(${a.join(' + ')})`); tka.push(`TKA=(${a.join(' + ')})`); }
+    if (b.length) { su.push(`SU=(${b.join(' + ')})`); tka.push(`TKA=(${b.join(' + ')})`); }
+    const suStr = su.join(' AND ');
+    const tkaStr = tka.join(' AND ');
+    const expr = a.length && b.length ? `(${suStr}) OR (${tkaStr})` : `${suStr} OR ${tkaStr}`;
+    return <DetailRow label="检索词" layout="vertical"><code className="text-xs break-all whitespace-pre-wrap leading-relaxed">{expr}</code></DetailRow>;
+  }
+  const qs = sp.queries?.length ? sp.queries : (sp.query ? [sp.query] : []);
+  return <DetailRow label="检索词" layout="vertical">{qs.length ? qs.join(' / ') : '-'}</DetailRow>;
+})()}
               <DetailRow label="起始年份">{(selectedInstance as any).execution_params?.search_params?.year_from ?? '-'}</DetailRow>
               <DetailRow label="结束年份">{(selectedInstance as any).execution_params?.search_params?.year_to ?? '-'}</DetailRow>
               <DetailRow label="更新时间范围">{DATE_RANGE_LABELS[(selectedInstance as any).execution_params?.search_params?.date_range as string] || '-'}</DetailRow>
