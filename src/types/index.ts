@@ -48,6 +48,7 @@ export interface SearchParams {
   queries?: string[]
   query_group_a?: string[]
   query_group_b?: string[]
+  au_group?: string[]
   year_from?: number | null
   year_to?: number | null
   date_range?: string | null

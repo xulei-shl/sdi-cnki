@@ -79,7 +79,7 @@ class ProfessionalCnkiInteractor:
     def _first_visible_locator(self, selectors: list[str], page: Optional[Page] = None) -> Optional[Locator]:
         return first_visible_locator(page or self.page, selectors, timeout_ms=500)
 
-    def _build_professional_query(self, group_a: list[str], group_b: list[str]) -> str:
+    def _build_professional_query(self, group_a: list[str], group_b: list[str], au_group: list[str] | None = None) -> str:
         def _quote(kw: str) -> str:
             kw = kw.replace("'", "\\'")
             return f"'{kw}'"
@@ -88,13 +88,20 @@ class ProfessionalCnkiInteractor:
         b_expr = " + ".join(_quote(kw) for kw in group_b)
 
         if group_a and group_b:
-            return (
+            base = (
                 f"(SU=({a_expr}) AND SU=({b_expr}))"
                 f" OR "
                 f"(TKA=({a_expr}) AND TKA=({b_expr}))"
             )
-        expr = a_expr if group_a else b_expr
-        return f"SU=({expr}) OR TKA=({expr})"
+        else:
+            expr = a_expr if group_a else b_expr
+            base = f"SU=({expr}) OR TKA=({expr})"
+
+        if au_group:
+            au_expr = " + ".join(_quote(au) for au in au_group)
+            base = f"({base}) AND AU=({au_expr})"
+
+        return base
 
     def _switch_to_professional_tab(self) -> None:
         deadline = _time.time() + 15
@@ -120,6 +127,7 @@ class ProfessionalCnkiInteractor:
         include_no_fulltext: bool,
         synonym_extend: bool = False,
         date_range: Optional[str] = None,
+        au_group: list[str] | None = None,
     ) -> None:
         self._disable_checkbox("input[data-id='EN'][name='onlyChecked']")
         if synonym_extend:
@@ -127,7 +135,7 @@ class ProfessionalCnkiInteractor:
 
         self._switch_to_professional_tab()
 
-        query_str = self._build_professional_query(group_a, group_b)
+        query_str = self._build_professional_query(group_a, group_b, au_group=au_group)
         textarea = self.page.locator("textarea.textarea-major.majorSearch").first
         if textarea.count() == 0:
             textarea = self.page.locator("textarea.majorSearch").first
@@ -697,8 +705,9 @@ class ProfessionalCnkiInteractor:
     def execute_search(self, params: dict) -> dict:
         group_a = params.get("query_group_a", [])
         group_b = params.get("query_group_b", [])
+        au_group = params.get("au_group", [])
         query_label = f"{group_a[0] if group_a else ''}_{group_b[0] if group_b else ''}"
-        logger.info(f"[CNKI-PROFESSIONAL] Starting search: A={group_a} B={group_b}")
+        logger.info(f"[CNKI-PROFESSIONAL] Starting search: A={group_a} B={group_b} AU={au_group}")
 
         self.browser.save_session()
         self.browser.goto(CnkiBrowser.ADVANCED_SEARCH_URL)
@@ -717,6 +726,7 @@ class ProfessionalCnkiInteractor:
             core_only=params.get("core_only", False),
             synonym_extend=params.get("synonym_extend", False),
             include_no_fulltext=params.get("include_no_fulltext", False),
+            au_group=au_group,
         )
         self._submit_search()
         self._wait_for_results_ready()

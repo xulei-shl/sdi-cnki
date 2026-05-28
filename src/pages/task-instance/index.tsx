@@ -346,13 +346,15 @@ export default function TaskInstancePage() {
   if (sp.search_mode === 'professional') {
     const a: string[] = sp.query_group_a?.filter(Boolean) || [];
     const b: string[] = sp.query_group_b?.filter(Boolean) || [];
+    const au: string[] = sp.au_group?.filter(Boolean) || [];
     const su: string[] = [];
     const tka: string[] = [];
     if (a.length) { su.push(`SU=(${a.join(' + ')})`); tka.push(`TKA=(${a.join(' + ')})`); }
     if (b.length) { su.push(`SU=(${b.join(' + ')})`); tka.push(`TKA=(${b.join(' + ')})`); }
     const suStr = su.join(' AND ');
     const tkaStr = tka.join(' AND ');
-    const expr = a.length && b.length ? `(${suStr}) OR (${tkaStr})` : `${suStr} OR ${tkaStr}`;
+    let expr = a.length && b.length ? `(${suStr}) OR (${tkaStr})` : `${suStr} OR ${tkaStr}`;
+    if (au.length) expr = `(${expr}) AND AU=(${au.join(' + ')})`;
     return <DetailRow label="检索词" layout="vertical"><code className="text-xs break-all whitespace-pre-wrap leading-relaxed">{expr}</code></DetailRow>;
   }
   const qs = sp.queries?.length ? sp.queries : (sp.query ? [sp.query] : []);

@@ -57,6 +57,12 @@ def validate_search_params(params: dict) -> None:
             raise ValidationError("query_group_a 和 query_group_b 至少需要一组非空检索词")
         params["query_group_a"] = ga_clean
         params["query_group_b"] = gb_clean
+        au = params.get("au_group")
+        if au is not None:
+            if not isinstance(au, list) or not all(isinstance(a, str) for a in au):
+                raise ValidationError("au_group 必须是字符串数组")
+            au_clean = [a.strip() for a in au if a.strip()]
+            params["au_group"] = au_clean
     else:
         queries = params.get("queries")
         query = params.get("query")
