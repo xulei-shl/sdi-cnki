@@ -158,6 +158,18 @@ th {
   @apply font-mono tabular-nums;
 }
 
+/* Professional search layout container queries */
+.search-params-container {
+  container-type: inline-size;
+}
+
+@container (max-width: 559px) {
+  .topic-grid,
+  .filter-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 /* Accessibility: Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   * {

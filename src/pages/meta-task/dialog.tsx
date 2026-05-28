@@ -266,7 +266,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? '编辑任务模板' : '新建任务模板'}</DialogTitle>
         </DialogHeader>
@@ -313,147 +313,135 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
               </div>
 
               {searchMode === 'professional' ? (
-                <div className="space-y-5 border rounded-lg p-4 bg-muted/20">
-                  <div className="space-y-3">
-                    <Label style={{ color: 'var(--theme-a)' }} className="font-semibold">主题A 关键词组</Label>
-                    <p className="text-xs text-muted-foreground">同义词/术语集合（如：阅读推广、全民阅读）</p>
-                    {queryGroupA.map((q, idx) => (
-                      <div key={idx} className="flex items-center gap-2 group/row">
-                        <span
-                          className="flex items-center justify-center w-5 h-5 rounded text-[11px] font-medium shrink-0"
-                          style={{ backgroundColor: 'var(--theme-a-bg)', color: 'var(--theme-a)' }}
-                        >
-                          {idx + 1}
-                        </span>
-                        <Input value={q} onChange={(e) => updateGroupA(idx, e.target.value)} placeholder={`主题A 关键词 ${idx + 1}`} className="flex-1" />
-                        <button
-                          type="button"
-                          onClick={() => removeGroupA(idx)}
-                          className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover/row:opacity-100 transition-all shrink-0"
-                          disabled={queryGroupA.length <= 1}
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                    <button type="button" onClick={addGroupA} className="flex items-center gap-1.5 text-sm font-medium transition-opacity hover:opacity-80" style={{ color: 'var(--theme-a)' }}>
-                      <Plus className="w-4 h-4" />
-                      添加关键词
-                    </button>
-                    {errors.queryGroupA && <p className="text-xs text-destructive">{errors.queryGroupA}</p>}
+                <div className="search-params-container space-y-4" style={{ containerType: 'inline-size' }}>
+                  {/* Theme Domain: A + B side by side */}
+                  <div className="topic-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    {/* Theme A */}
+                    <div className="space-y-2.5 border rounded-lg p-3.5 bg-muted/20" style={{ borderColor: 'var(--theme-a-bg)' }}>
+                      <Label style={{ color: 'var(--theme-a)' }} className="font-semibold text-sm">主题A 关键词组</Label>
+                      <p className="text-xs text-muted-foreground">同义词/术语集合（如：阅读推广、全民阅读）</p>
+                      {queryGroupA.map((q, idx) => (
+                        <div key={idx} className="flex items-center gap-2 group/row">
+                          <span
+                            className="flex items-center justify-center w-5 h-5 rounded text-[11px] font-medium shrink-0"
+                            style={{ backgroundColor: 'var(--theme-a-bg)', color: 'var(--theme-a)' }}
+                          >
+                            {idx + 1}
+                          </span>
+                          <Input value={q} onChange={(e) => updateGroupA(idx, e.target.value)} placeholder={`主题A 关键词 ${idx + 1}`} className="flex-1" />
+                          <button
+                            type="button"
+                            onClick={() => removeGroupA(idx)}
+                            className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover/row:opacity-100 transition-all shrink-0"
+                            disabled={queryGroupA.length <= 1}
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button type="button" onClick={addGroupA} className="flex items-center gap-1.5 text-sm font-medium transition-opacity hover:opacity-80" style={{ color: 'var(--theme-a)' }}>
+                        <Plus className="w-4 h-4" />
+                        添加关键词
+                      </button>
+                      {errors.queryGroupA && <p className="text-xs text-destructive">{errors.queryGroupA}</p>}
+                    </div>
+
+                    {/* Theme B */}
+                    <div className="space-y-2.5 border rounded-lg p-3.5 bg-muted/20" style={{ borderColor: 'var(--theme-b-bg)' }}>
+                      <Label style={{ color: 'var(--theme-b)' }} className="font-semibold text-sm">主题B 关键词组</Label>
+                      <p className="text-xs text-muted-foreground">同义词/术语集合（如：AI、大模型、AIGC）</p>
+                      {queryGroupB.map((q, idx) => (
+                        <div key={idx} className="flex items-center gap-2 group/row">
+                          <span
+                            className="flex items-center justify-center w-5 h-5 rounded text-[11px] font-medium shrink-0"
+                            style={{ backgroundColor: 'var(--theme-b-bg)', color: 'var(--theme-b)' }}
+                          >
+                            {idx + 1}
+                          </span>
+                          <Input value={q} onChange={(e) => updateGroupB(idx, e.target.value)} placeholder={`主题B 关键词 ${idx + 1}`} className="flex-1" />
+                          <button
+                            type="button"
+                            onClick={() => removeGroupB(idx)}
+                            className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover/row:opacity-100 transition-all shrink-0"
+                            disabled={queryGroupB.length <= 1}
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button type="button" onClick={addGroupB} className="flex items-center gap-1.5 text-sm font-medium transition-opacity hover:opacity-80" style={{ color: 'var(--theme-b)' }}>
+                        <Plus className="w-4 h-4" />
+                        添加关键词
+                      </button>
+                      {errors.queryGroupB && <p className="text-xs text-destructive">{errors.queryGroupB}</p>}
+                    </div>
                   </div>
 
+                  {/* AND divider between theme and filter domains */}
                   <div className="flex items-center gap-3 text-sm">
                     <span className="h-px flex-1 bg-border" />
-                    <span className="flex items-center gap-2 text-muted-foreground/60">
-                      <span className="w-1 h-1 rounded-full bg-border" />
-                      <span className="font-semibold tracking-wider text-foreground/50">AND</span>
-                      <span className="w-1 h-1 rounded-full bg-border" />
-                    </span>
+                    <span className="font-semibold tracking-wider text-foreground/40 text-xs">AND</span>
                     <span className="h-px flex-1 bg-border" />
                   </div>
 
-                  <div className="space-y-3">
-                    <Label style={{ color: 'var(--theme-b)' }} className="font-semibold">主题B 关键词组</Label>
-                    <p className="text-xs text-muted-foreground">同义词/术语集合（如：AI、大模型、AIGC）</p>
-                    {queryGroupB.map((q, idx) => (
-                      <div key={idx} className="flex items-center gap-2 group/row">
-                        <span
-                          className="flex items-center justify-center w-5 h-5 rounded text-[11px] font-medium shrink-0"
-                          style={{ backgroundColor: 'var(--theme-b-bg)', color: 'var(--theme-b)' }}
-                        >
-                          {idx + 1}
-                        </span>
-                        <Input value={q} onChange={(e) => updateGroupB(idx, e.target.value)} placeholder={`主题B 关键词 ${idx + 1}`} className="flex-1" />
-                        <button
-                          type="button"
-                          onClick={() => removeGroupB(idx)}
-                          className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover/row:opacity-100 transition-all shrink-0"
-                          disabled={queryGroupB.length <= 1}
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                    <button type="button" onClick={addGroupB} className="flex items-center gap-1.5 text-sm font-medium transition-opacity hover:opacity-80" style={{ color: 'var(--theme-b)' }}>
-                      <Plus className="w-4 h-4" />
-                      添加关键词
-                    </button>
-                    {errors.queryGroupB && <p className="text-xs text-destructive">{errors.queryGroupB}</p>}
+                  {/* Filter Domain: AU + FU side by side, lighter style */}
+                  <div className="filter-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    {/* Author */}
+                    <div className="space-y-2 rounded-lg p-3 bg-muted/10">
+                      <Label className="font-medium text-sm text-muted-foreground">作者（可选）</Label>
+                      <p className="text-xs text-muted-foreground">多个作者用 OR 连接</p>
+                      {auGroup.map((au, idx) => (
+                        <div key={idx} className="flex items-center gap-2 group/row">
+                          <span className="flex items-center justify-center w-5 h-5 rounded text-[11px] font-medium shrink-0 bg-muted-foreground/10 text-muted-foreground">
+                            {idx + 1}
+                          </span>
+                          <Input value={au} onChange={(e) => updateAuthor(idx, e.target.value)} placeholder={`作者姓名 ${idx + 1}`} className="flex-1" />
+                          <button
+                            type="button"
+                            onClick={() => removeAuthor(idx)}
+                            className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover/row:opacity-100 transition-all shrink-0"
+                            disabled={auGroup.length <= 1}
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button type="button" onClick={addAuthor} className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-opacity hover:opacity-80">
+                        <Plus className="w-4 h-4" />
+                        添加作者
+                      </button>
+                    </div>
+
+                    {/* Fund */}
+                    <div className="space-y-2 rounded-lg p-3 bg-muted/10">
+                      <Label className="font-medium text-sm text-muted-foreground">基金（可选）</Label>
+                      <p className="text-xs text-muted-foreground">多个基金用 OR 连接</p>
+                      {fuGroup.map((fu, idx) => (
+                        <div key={idx} className="flex items-center gap-2 group/row">
+                          <span className="flex items-center justify-center w-5 h-5 rounded text-[11px] font-medium shrink-0 bg-muted-foreground/10 text-muted-foreground">
+                            {idx + 1}
+                          </span>
+                          <Input value={fu} onChange={(e) => updateFund(idx, e.target.value)} placeholder={`基金名称 ${idx + 1}`} className="flex-1" />
+                          <button
+                            type="button"
+                            onClick={() => removeFund(idx)}
+                            className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover/row:opacity-100 transition-all shrink-0"
+                            disabled={fuGroup.length <= 1}
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button type="button" onClick={addFund} className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-opacity hover:opacity-80">
+                        <Plus className="w-4 h-4" />
+                        添加基金
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-3 text-sm">
-                    <span className="h-px flex-1 bg-border" />
-                    <span className="flex items-center gap-2 text-muted-foreground/60">
-                      <span className="w-1 h-1 rounded-full bg-border" />
-                      <span className="font-semibold tracking-wider text-foreground/50">AND</span>
-                      <span className="w-1 h-1 rounded-full bg-border" />
-                    </span>
-                    <span className="h-px flex-1 bg-border" />
-                  </div>
-
-                  <div className="space-y-3">
-                    <Label className="font-semibold">作者（可选）</Label>
-                    <p className="text-xs text-muted-foreground">多个作者用 OR 连接，默认与主题条件 AND 关系</p>
-                    {auGroup.map((au, idx) => (
-                      <div key={idx} className="flex items-center gap-2 group/row">
-                        <span className="flex items-center justify-center w-5 h-5 rounded text-[11px] font-medium shrink-0 bg-muted-foreground/10 text-muted-foreground">
-                          {idx + 1}
-                        </span>
-                        <Input value={au} onChange={(e) => updateAuthor(idx, e.target.value)} placeholder={`作者姓名 ${idx + 1}`} className="flex-1" />
-                        <button
-                          type="button"
-                          onClick={() => removeAuthor(idx)}
-                          className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover/row:opacity-100 transition-all shrink-0"
-                          disabled={auGroup.length <= 1}
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                    <button type="button" onClick={addAuthor} className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-opacity hover:opacity-80">
-                      <Plus className="w-4 h-4" />
-                      添加作者
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-3 text-sm">
-                    <span className="h-px flex-1 bg-border" />
-                    <span className="flex items-center gap-2 text-muted-foreground/60">
-                      <span className="w-1 h-1 rounded-full bg-border" />
-                      <span className="font-semibold tracking-wider text-foreground/50">AND</span>
-                      <span className="w-1 h-1 rounded-full bg-border" />
-                    </span>
-                    <span className="h-px flex-1 bg-border" />
-                  </div>
-
-                  <div className="space-y-3">
-                    <Label className="font-semibold">基金（可选）</Label>
-                    <p className="text-xs text-muted-foreground">多个基金用 OR 连接，默认与主题条件 AND 关系</p>
-                    {fuGroup.map((fu, idx) => (
-                      <div key={idx} className="flex items-center gap-2 group/row">
-                        <span className="flex items-center justify-center w-5 h-5 rounded text-[11px] font-medium shrink-0 bg-muted-foreground/10 text-muted-foreground">
-                          {idx + 1}
-                        </span>
-                        <Input value={fu} onChange={(e) => updateFund(idx, e.target.value)} placeholder={`基金名称 ${idx + 1}`} className="flex-1" />
-                        <button
-                          type="button"
-                          onClick={() => removeFund(idx)}
-                          className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover/row:opacity-100 transition-all shrink-0"
-                          disabled={fuGroup.length <= 1}
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                    <button type="button" onClick={addFund} className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-opacity hover:opacity-80">
-                      <Plus className="w-4 h-4" />
-                      添加基金
-                    </button>
-                  </div>
-
+                  {/* Search logic hint - simplified */}
                   <div className="text-xs leading-relaxed text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 border border-border/50">
-                    检索逻辑：<code className="text-foreground font-medium">(SU=A×B) OR (TKA=A×B)</code>，每组内关键词用 OR 连接，两组间用 AND 连接{auGroup.some(a => a.trim()) ? '，作者条件用 AND 连接' : ''}{fuGroup.some(f => f.trim()) ? '，基金条件用 AND 连接' : ''}
+                    表达式：<code className="text-foreground font-medium">(SU=A×B) OR (TKA=A×B)</code> · 组内 OR · 组间 AND
                   </div>
                 </div>
               ) : (

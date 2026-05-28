@@ -90,7 +90,7 @@ session/
 *.tmp
 temp/
 
-.config/
+# .config/
 .codex/
 # .claude/
 .agent/
