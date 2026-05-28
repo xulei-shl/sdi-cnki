@@ -41,6 +41,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
   const [queryGroupA, setQueryGroupA] = useState<string[]>([''])
   const [queryGroupB, setQueryGroupB] = useState<string[]>([''])
   const [auGroup, setAuGroup] = useState<string[]>([])
+  const [fuGroup, setFuGroup] = useState<string[]>([])
   const [yearFrom, setYearFrom] = useState<string>('')
   const [yearTo, setYearTo] = useState<string>('')
   const [dateRange, setDateRange] = useState('')
@@ -95,6 +96,15 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
     setAuGroup(prev => prev.map((a, i) => i === idx ? value : a))
   }
 
+  const addFund = () => setFuGroup(prev => [...prev, ''])
+  const removeFund = (idx: number) => {
+    if (fuGroup.length <= 1) return
+    setFuGroup(prev => prev.filter((_, i) => i !== idx))
+  }
+  const updateFund = (idx: number, value: string) => {
+    setFuGroup(prev => prev.map((f, i) => i === idx ? value : f))
+  }
+
   useEffect(() => {
     if (open) {
       getDedupCandidates().then(res => {
@@ -112,6 +122,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           setQueryGroupA(sp.query_group_a?.length ? sp.query_group_a : [''])
           setQueryGroupB(sp.query_group_b?.length ? sp.query_group_b : [''])
           setAuGroup(sp.au_group?.length ? sp.au_group : [])
+          setFuGroup(sp.fu_group?.length ? sp.fu_group : [])
           setQueries([''])
         } else {
           const savedQueries = sp.queries?.length ? sp.queries : (sp.query ? [sp.query] : [''])
@@ -137,6 +148,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
         setQueryGroupA([''])
         setQueryGroupB([''])
         setAuGroup([])
+        setFuGroup([])
         setYearFrom('')
         setYearTo('')
         setDateRange('')
@@ -203,6 +215,8 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
         searchParams.query_group_b = queryGroupB.filter(q => q.trim())
         const au = auGroup.filter(a => a.trim())
         if (au.length) searchParams.au_group = au
+        const fu = fuGroup.filter(f => f.trim())
+        if (fu.length) searchParams.fu_group = fu
       } else {
         searchParams.queries = queries.filter(q => q.trim())
       }
@@ -403,8 +417,43 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
                     </button>
                   </div>
 
+                  <div className="flex items-center gap-3 text-sm">
+                    <span className="h-px flex-1 bg-border" />
+                    <span className="flex items-center gap-2 text-muted-foreground/60">
+                      <span className="w-1 h-1 rounded-full bg-border" />
+                      <span className="font-semibold tracking-wider text-foreground/50">AND</span>
+                      <span className="w-1 h-1 rounded-full bg-border" />
+                    </span>
+                    <span className="h-px flex-1 bg-border" />
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label className="font-semibold">基金（可选）</Label>
+                    <p className="text-xs text-muted-foreground">多个基金用 OR 连接，默认与主题条件 AND 关系</p>
+                    {fuGroup.map((fu, idx) => (
+                      <div key={idx} className="flex items-center gap-2 group/row">
+                        <span className="flex items-center justify-center w-5 h-5 rounded text-[11px] font-medium shrink-0 bg-muted-foreground/10 text-muted-foreground">
+                          {idx + 1}
+                        </span>
+                        <Input value={fu} onChange={(e) => updateFund(idx, e.target.value)} placeholder={`基金名称 ${idx + 1}`} className="flex-1" />
+                        <button
+                          type="button"
+                          onClick={() => removeFund(idx)}
+                          className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover/row:opacity-100 transition-all shrink-0"
+                          disabled={fuGroup.length <= 1}
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                    <button type="button" onClick={addFund} className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-opacity hover:opacity-80">
+                      <Plus className="w-4 h-4" />
+                      添加基金
+                    </button>
+                  </div>
+
                   <div className="text-xs leading-relaxed text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 border border-border/50">
-                    检索逻辑：<code className="text-foreground font-medium">(SU=A×B) OR (TKA=A×B)</code>，每组内关键词用 OR 连接，两组间用 AND 连接{auGroup.some(a => a.trim()) ? '，作者条件用 AND 连接' : ''}
+                    检索逻辑：<code className="text-foreground font-medium">(SU=A×B) OR (TKA=A×B)</code>，每组内关键词用 OR 连接，两组间用 AND 连接{auGroup.some(a => a.trim()) ? '，作者条件用 AND 连接' : ''}{fuGroup.some(f => f.trim()) ? '，基金条件用 AND 连接' : ''}
                   </div>
                 </div>
               ) : (

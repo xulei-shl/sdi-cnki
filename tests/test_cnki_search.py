@@ -92,6 +92,10 @@ PROFESSIONAL_COMBOS: list[dict] = [
     {"search_mode": "professional", "query_group_b": ["出版融合", "媒体融合"], "max_export": 10, "core_only": True},
     {"search_mode": "professional", "query_group_a": ["阅读推广"], "query_group_b": ["AI"], "au_group": ["刘慈欣", "王晋康"], "max_export": 10},
     {"search_mode": "professional", "query_group_a": ["数字经济"], "au_group": ["张教授"], "max_export": 10},
+    {"search_mode": "professional", "query_group_a": ["阅读推广"], "fu_group": ["国家社科基金", "教育部人文社科"], "max_export": 10},
+    {"search_mode": "professional", "query_group_a": ["图书馆"], "query_group_b": ["数字化"], "au_group": ["刘教授"], "fu_group": ["国家自然科学基金"], "max_export": 10},
+    {"search_mode": "professional", "fu_group": ["国家社科基金"], "max_export": 10},
+    {"search_mode": "professional", "au_group": ["刘慈欣"], "fu_group": ["国家出版基金"], "max_export": 10},
 ]
 
 
@@ -140,6 +144,7 @@ if __name__ == "__main__":
     parser.add_argument("--group-a", nargs="*", default=[], help="Group A keywords (professional mode)")
     parser.add_argument("--group-b", nargs="*", default=[], help="Group B keywords (professional mode)")
     parser.add_argument("--group-au", nargs="*", default=[], help="Author names (professional mode, optional)")
+    parser.add_argument("--group-fu", nargs="*", default=[], help="Fund names (professional mode, optional)")
     parser.add_argument("--batch", action="store_true", help="Run all predefined basic combos")
     parser.add_argument("--batch-professional", action="store_true", help="Run all predefined professional combos")
     args = parser.parse_args()
@@ -172,6 +177,8 @@ if __name__ == "__main__":
         }
         if args.group_au:
             params["au_group"] = args.group_au
+        if args.group_fu:
+            params["fu_group"] = args.group_fu
         if args.date_range:
             params["date_range"] = args.date_range
         if args.year_from is not None:

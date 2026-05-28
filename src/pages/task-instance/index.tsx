@@ -347,6 +347,7 @@ export default function TaskInstancePage() {
     const a: string[] = sp.query_group_a?.filter(Boolean) || [];
     const b: string[] = sp.query_group_b?.filter(Boolean) || [];
     const au: string[] = sp.au_group?.filter(Boolean) || [];
+    const fu: string[] = sp.fu_group?.filter(Boolean) || [];
     const su: string[] = [];
     const tka: string[] = [];
     if (a.length) { su.push(`SU=(${a.join(' + ')})`); tka.push(`TKA=(${a.join(' + ')})`); }
@@ -355,6 +356,7 @@ export default function TaskInstancePage() {
     const tkaStr = tka.join(' AND ');
     let expr = a.length && b.length ? `(${suStr}) OR (${tkaStr})` : `${suStr} OR ${tkaStr}`;
     if (au.length) expr = `(${expr}) AND AU=(${au.join(' + ')})`;
+    if (fu.length) expr = `(${expr}) AND FU % (${fu.join(' + ')})`;
     return <DetailRow label="检索词" layout="vertical"><code className="text-xs break-all whitespace-pre-wrap leading-relaxed">{expr}</code></DetailRow>;
   }
   const qs = sp.queries?.length ? sp.queries : (sp.query ? [sp.query] : []);
