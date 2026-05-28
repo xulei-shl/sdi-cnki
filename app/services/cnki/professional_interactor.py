@@ -93,10 +93,8 @@ class ProfessionalCnkiInteractor:
                 f" OR "
                 f"(TKA=({a_expr}) AND TKA=({b_expr}))"
             )
-        elif group_a:
-            return f"SU=({a_expr})"
-        else:
-            return f"TKA=({b_expr})"
+        expr = a_expr if group_a else b_expr
+        return f"SU=({expr}) OR TKA=({expr})"
 
     def _switch_to_professional_tab(self) -> None:
         deadline = _time.time() + 15
