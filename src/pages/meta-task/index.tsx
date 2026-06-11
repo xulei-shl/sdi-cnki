@@ -239,7 +239,7 @@ export default function MetaTaskPage() {
                   </TableCell>
                   <TableCell>{formatDate(task.last_executed_at)}</TableCell>
                   <TableCell className="text-right p-2">
-                    <div className="grid grid-cols-2 gap-x-px gap-y-1 justify-items-end">
+                    <div className="grid grid-cols-2 gap-x-0 gap-y-1 justify-items-end">
                       <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => openEdit(e, task)}>编辑</Button>
                       <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleClone(e, task.id)}>复制</Button>
                       <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleExecute(e, task.id)}>运行</Button>
