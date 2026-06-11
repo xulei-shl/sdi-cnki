@@ -31,8 +31,6 @@ async def decrement_pdf_refs_for_instance(db: AsyncSession, instance_id: int) ->
             _delete_physical_file(pf.pdf_path)
             await db.delete(pf)
 
-    await db.commit()
-
 
 def _delete_physical_file(pdf_path: str | None) -> None:
     if not pdf_path:

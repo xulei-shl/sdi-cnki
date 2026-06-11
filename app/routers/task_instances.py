@@ -11,7 +11,7 @@ settings = get_settings()
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import select, func, desc, or_
+from sqlalchemy import select, func, desc, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -21,8 +21,9 @@ from app.database import get_db
 from app.models.download_result import DownloadResult
 from app.models.meta_task import MetaTask
 from app.models.task_instance import TaskInstance
+from app.models.task_queue import TaskQueueItem
 from app.models.task_result import TaskResult
-from app.utils.exceptions import NotFoundError, ValidationError
+from app.utils.exceptions import NotFoundError, PermissionDeniedError, ValidationError
 from app.utils.logging import get_logger as _get_logger
 from app.utils.oplog import log_operation
 from app.routers import get_current_user_from_header
@@ -144,7 +145,6 @@ async def update_task_instance_params(
     if not inst:
         raise NotFoundError("TaskInstance", instance_id)
     if current_user.role != "admin" and inst.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
     if inst.status != "pending":
         raise ValidationError("Only pending instances can be modified")
@@ -180,9 +180,7 @@ async def get_task_instance(
     if not inst:
         raise NotFoundError("TaskInstance", instance_id)
     if current_user.role != "admin" and inst.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
-
     from app.models.llm_analysis_result import LlmAnalysisResult
     from app.models.download_result import DownloadResult
 
@@ -300,15 +298,39 @@ async def delete_instance(
     if not inst:
         raise NotFoundError("TaskInstance", instance_id)
     if current_user.role != "admin" and inst.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
-    if inst.status != "pending" and inst.search_result_count != 0:
-        raise ValidationError("Only pending instances can be deleted")
+
+    # 清理 duplicate_ref_id 悬挂指针
+    deleted_result_ids = select(TaskResult.id).where(
+        TaskResult.task_instance_id == instance_id
+    )
+    await db.execute(
+        update(TaskResult)
+        .where(TaskResult.duplicate_ref_id.in_(deleted_result_ids))
+        .values(duplicate_ref_id=None, is_duplicate=False)
+    )
+
+    # PdfFile 引用计数递减 + 物理文件清理
+    from app.services.pdf_cleanup import decrement_pdf_refs_for_instance
+    await decrement_pdf_refs_for_instance(db, instance_id)
+
+    # 取消队列中关联的待处理/运行中任务
+    keys = [inst.instance_no, f"llm_{inst.instance_no}", f"download_{inst.instance_no}", f"llm_retry_{inst.instance_no}"]
+    await db.execute(
+        update(TaskQueueItem)
+        .where(TaskQueueItem.task_key.in_(keys))
+        .where(TaskQueueItem.status.in_(["pending", "running", "retrying"]))
+        .values(status="cancelled")
+    )
+
+    # 递减父模板执行计数
     task_stmt = select(MetaTask).where(MetaTask.id == inst.meta_task_id)
     task_result = await db.execute(task_stmt)
     task = task_result.scalar_one_or_none()
     if task:
         task.execution_count = max(0, (task.execution_count or 0) - 1)
+
+    # 删除实例（ORM 级联 task_results → llm_analysis_results, download_results）
     await db.delete(inst)
     await db.commit()
     await log_operation(db, current_user.id, "delete", "task_instance", instance_id, f"Deleted instance {inst.instance_no}")
@@ -321,23 +343,8 @@ async def delete_instance_with_pdfs(
     current_user = Depends(get_current_user_from_header),
     db: AsyncSession = Depends(get_db),
 ):
-    """Full delete: decrement PDF ref_count, remove physical files, delete records."""
-    stmt = select(TaskInstance).where(TaskInstance.id == instance_id)
-    result = await db.execute(stmt)
-    inst = result.scalar_one_or_none()
-    if not inst:
-        raise NotFoundError("TaskInstance", instance_id)
-    if current_user.role != "admin" and inst.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
-        raise PermissionDeniedError()
-
-    from app.services.pdf_cleanup import decrement_pdf_refs_for_instance
-    await decrement_pdf_refs_for_instance(db, instance_id)
-
-    await db.delete(inst)
-    await db.commit()
-    await log_operation(db, current_user.id, "delete", "task_instance", instance_id, f"Deleted instance {inst.instance_no}")
-    return {"message": "Instance deleted"}
+    """向前兼容：完全删除实例，级联清理 PDF 引用和队列任务。"""
+    return await delete_instance(instance_id, current_user, db)
 
 
 @router.get("/{instance_id}/results")
@@ -362,7 +369,6 @@ async def list_instance_results(
     if not inst:
         raise NotFoundError("TaskInstance", instance_id)
     if current_user.role != "admin" and inst.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
     where = [TaskResult.task_instance_id == instance_id]
     if not include_duplicate:
@@ -553,7 +559,6 @@ async def retry_single_download(
     if not inst:
         raise NotFoundError("TaskInstance", instance_id)
     if current_user.role != "admin" and inst.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
 
     tr = await db.execute(
@@ -656,7 +661,6 @@ async def retry_llm_analysis(
     if not inst:
         raise NotFoundError("TaskInstance", instance_id)
     if current_user.role != "admin" and inst.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
     if inst.status in ("pending", "search_queued", "running", "search_completed", "analyzing"):
         raise ValidationError(f"Cannot retry analysis in status: {inst.status}")
@@ -688,7 +692,6 @@ async def run_task_instance(
     if not inst:
         raise NotFoundError("TaskInstance", instance_id)
     if current_user.role != "admin" and inst.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
     if inst.status != "pending":
         raise ValidationError(f"Cannot run instance with status: {inst.status}")
@@ -720,7 +723,6 @@ async def complete_task_instance(
     if not inst:
         raise NotFoundError("TaskInstance", instance_id)
     if current_user.role != "admin" and inst.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
     if inst.status != "search_completed":
         raise ValidationError(f"Cannot complete instance with status: {inst.status}")
@@ -749,7 +751,6 @@ async def import_excel_results(
     if not inst:
         raise NotFoundError("TaskInstance", instance_id)
     if current_user.role != "admin" and inst.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
     if inst.status != "pending":
         raise ValidationError(f"任务实例状态不允许导入，当前状态：{inst.status}")

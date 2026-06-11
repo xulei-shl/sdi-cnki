@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, model_validator
-from sqlalchemy import select, func, desc, or_
+from sqlalchemy import select, func, desc, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,8 +16,10 @@ from app.models.meta_task_dedup_scope import MetaTaskDedupScope
 from app.models.meta_task_llm_config import MetaTaskLlmConfig
 from app.models.system_prompt import SystemPrompt
 from app.models.task_instance import TaskInstance
+from app.models.task_result import TaskResult
+from app.models.task_queue import TaskQueueItem
 from app.models.user import User
-from app.utils.exceptions import NotFoundError, ValidationError
+from app.utils.exceptions import NotFoundError, PermissionDeniedError, ValidationError
 from app.utils.oplog import log_operation
 from app.routers import get_current_user_from_header, require_admin_user
 
@@ -275,7 +277,6 @@ async def get_meta_task(
     if not task:
         raise NotFoundError("MetaTask", task_id)
     if current_user.role != "admin" and task.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
     llm_configs = [
         {"id": link.llm_config_id, "name": link.llm_config.name if link.llm_config else "", "priority": link.priority}
@@ -337,7 +338,6 @@ async def update_meta_task(
     if not task:
         raise NotFoundError("MetaTask", task_id)
     if current_user.role != "admin" and task.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
     if data.name is not None:
         task.name = data.name
@@ -385,18 +385,60 @@ async def delete_meta_task(
     current_user = Depends(get_current_user_from_header),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(MetaTask).where(MetaTask.id == task_id))
-    task = result.scalar_one_or_none()
+    result = await db.execute(
+        select(MetaTask)
+        .where(MetaTask.id == task_id)
+        .options(selectinload(MetaTask.task_instances))
+    )
+    task = result.unique().scalar_one_or_none()
     if not task:
         raise NotFoundError("MetaTask", task_id)
     if current_user.role != "admin" and task.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
-    inst_count = await db.execute(
-        select(func.count(TaskInstance.id)).where(TaskInstance.meta_task_id == task_id)
-    )
-    if inst_count.scalar() > 0:
-        raise ValidationError("Cannot delete meta task with existing instances")
+
+    instances = task.task_instances or []
+    running_statuses = {"search_queued", "running", "analyzing", "downloading", "download_queued"}
+    for inst in instances:
+        if inst.status in running_statuses:
+            raise ValidationError(
+                f"任务实例 {inst.instance_no} 当前状态为 {inst.status}，无法删除模板"
+            )
+
+    if instances:
+        instance_ids = [inst.id for inst in instances]
+        instance_nos = [inst.instance_no for inst in instances]
+
+        # 清理 duplicate_ref_id 悬挂指针
+        deleted_result_ids = select(TaskResult.id).where(
+            TaskResult.task_instance_id.in_(instance_ids)
+        )
+        await db.execute(
+            update(TaskResult)
+            .where(TaskResult.duplicate_ref_id.in_(deleted_result_ids))
+            .values(duplicate_ref_id=None, is_duplicate=False)
+        )
+
+        # PdfFile 引用计数递减 + 物理文件清理
+        from app.services.pdf_cleanup import decrement_pdf_refs_for_instance
+        for inst in instances:
+            await decrement_pdf_refs_for_instance(db, inst.id)
+
+        # 取消队列中关联的待处理/运行中任务
+        keys = []
+        for no in instance_nos:
+            keys.extend([no, f"llm_{no}", f"download_{no}", f"llm_retry_{no}"])
+        await db.execute(
+            update(TaskQueueItem)
+            .where(TaskQueueItem.task_key.in_(keys))
+            .where(TaskQueueItem.status.in_(["pending", "running", "retrying"]))
+            .values(status="cancelled")
+        )
+
+        # 删除所有任务实例（ORM 级联 task_results → llm_analysis_results, download_results）
+        for inst in instances:
+            await db.delete(inst)
+
+    # 删除任务模板（ORM 级联 meta_task_llm_configs, meta_task_dedup_scopes）
     await db.delete(task)
     await db.commit()
     await log_operation(db, current_user.id, "delete", "meta_task", task_id, f"Deleted meta task {task.name}")
@@ -421,7 +463,6 @@ async def clone_meta_task(
     if not task:
         raise NotFoundError("MetaTask", task_id)
     if current_user.role != "admin" and task.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
 
     new_task = MetaTask(
@@ -496,7 +537,6 @@ async def execute_meta_task(
     if not task:
         raise NotFoundError("MetaTask", task_id)
     if current_user.role != "admin" and task.creator_id != current_user.id:
-        from app.utils.exceptions import PermissionDeniedError
         raise PermissionDeniedError()
     from app.routers.task_instances import _create_instance
     instance = await _create_instance(db, task, current_user, auto_run=body.auto_run)
