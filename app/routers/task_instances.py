@@ -292,9 +292,18 @@ async def delete_instance(
     current_user = Depends(get_current_user_from_header),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(TaskInstance).where(TaskInstance.id == instance_id)
+    stmt = (
+        select(TaskInstance)
+        .where(TaskInstance.id == instance_id)
+        .options(
+            selectinload(TaskInstance.task_results)
+                .selectinload(TaskResult.llm_analysis),
+            selectinload(TaskInstance.task_results)
+                .selectinload(TaskResult.download_result),
+        )
+    )
     result = await db.execute(stmt)
-    inst = result.scalar_one_or_none()
+    inst = result.unique().scalar_one_or_none()
     if not inst:
         raise NotFoundError("TaskInstance", instance_id)
     if current_user.role != "admin" and inst.creator_id != current_user.id:

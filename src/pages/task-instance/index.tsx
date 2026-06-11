@@ -298,11 +298,9 @@ export default function TaskInstancePage() {
                             编辑
                           </Button>
                         )}
-                        {(inst.status === 'pending' || inst.search_result_count === 0) && (
-                          <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={(e) => handleDeleteInstance(e, inst)} disabled={deletingId === inst.id}>
-                            {deletingId === inst.id ? '删除中...' : '删除'}
-                          </Button>
-                        )}
+                        <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={(e) => handleDeleteInstance(e, inst)} disabled={deletingId === inst.id}>
+                          {deletingId === inst.id ? '删除中...' : '删除'}
+                        </Button>
                         {['analyzing_completed', 'download_queued', 'downloading', 'completed', 'failed'].includes(inst.status) && (
                           <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleExport(e, inst)} disabled={exportingId === inst.id}>
                             {exportingId === inst.id ? '导出中...' : '导出'}

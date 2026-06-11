@@ -388,7 +388,14 @@ async def delete_meta_task(
     result = await db.execute(
         select(MetaTask)
         .where(MetaTask.id == task_id)
-        .options(selectinload(MetaTask.task_instances))
+        .options(
+            selectinload(MetaTask.task_instances)
+                .selectinload(TaskInstance.task_results)
+                    .selectinload(TaskResult.llm_analysis),
+            selectinload(MetaTask.task_instances)
+                .selectinload(TaskInstance.task_results)
+                    .selectinload(TaskResult.download_result),
+        )
     )
     task = result.unique().scalar_one_or_none()
     if not task:
