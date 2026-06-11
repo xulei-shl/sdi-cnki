@@ -238,14 +238,12 @@ export default function MetaTaskPage() {
                     <Badge variant={statusVariant(task.is_active)}>{statusLabel(task.is_active)}</Badge>
                   </TableCell>
                   <TableCell>{formatDate(task.last_executed_at)}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-3">
+                  <TableCell className="text-right p-2">
+                    <div className="grid grid-cols-2 gap-x-px gap-y-1 justify-items-end">
                       <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => openEdit(e, task)}>编辑</Button>
                       <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleClone(e, task.id)}>复制</Button>
                       <Button variant="link" className="h-auto p-0 font-normal" onClick={(e) => handleExecute(e, task.id)}>运行</Button>
-                      {task.execution_count === 0 && (
-                        <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={(e) => handleDelete(e, task.id)}>删除</Button>
-                      )}
+                      <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={(e) => handleDelete(e, task.id)}>删除</Button>
                     </div>
                   </TableCell>
                 </TableRow>
