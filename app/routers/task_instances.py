@@ -287,6 +287,35 @@ async def get_task_instance(
 
 
 @router.delete("/{instance_id}")
+async def _cleanup_instance_side_effects(db: AsyncSession, inst: TaskInstance) -> None:
+    """清理实例的关联副作用：悬挂指针、PDF引用、队列任务。
+
+    不提交、不删除实例本身，供删除实例和删除模板时复用。
+    """
+    # 清理 duplicate_ref_id 悬挂指针
+    deleted_result_ids = select(TaskResult.id).where(
+        TaskResult.task_instance_id == inst.id
+    )
+    await db.execute(
+        update(TaskResult)
+        .where(TaskResult.duplicate_ref_id.in_(deleted_result_ids))
+        .values(duplicate_ref_id=None, is_duplicate=False)
+    )
+
+    # PdfFile 引用计数递减 + 物理文件清理
+    from app.services.pdf_cleanup import decrement_pdf_refs_for_instance
+    await decrement_pdf_refs_for_instance(db, inst.id)
+
+    # 取消队列中关联的待处理/运行中任务
+    keys = [inst.instance_no, f"llm_{inst.instance_no}", f"download_{inst.instance_no}", f"llm_retry_{inst.instance_no}"]
+    await db.execute(
+        update(TaskQueueItem)
+        .where(TaskQueueItem.task_key.in_(keys))
+        .where(TaskQueueItem.status.in_(["pending", "running", "retrying"]))
+        .values(status="cancelled")
+    )
+
+
 async def delete_instance(
     instance_id: int,
     current_user = Depends(get_current_user_from_header),
@@ -309,28 +338,7 @@ async def delete_instance(
     if current_user.role != "admin" and inst.creator_id != current_user.id:
         raise PermissionDeniedError()
 
-    # 清理 duplicate_ref_id 悬挂指针
-    deleted_result_ids = select(TaskResult.id).where(
-        TaskResult.task_instance_id == instance_id
-    )
-    await db.execute(
-        update(TaskResult)
-        .where(TaskResult.duplicate_ref_id.in_(deleted_result_ids))
-        .values(duplicate_ref_id=None, is_duplicate=False)
-    )
-
-    # PdfFile 引用计数递减 + 物理文件清理
-    from app.services.pdf_cleanup import decrement_pdf_refs_for_instance
-    await decrement_pdf_refs_for_instance(db, instance_id)
-
-    # 取消队列中关联的待处理/运行中任务
-    keys = [inst.instance_no, f"llm_{inst.instance_no}", f"download_{inst.instance_no}", f"llm_retry_{inst.instance_no}"]
-    await db.execute(
-        update(TaskQueueItem)
-        .where(TaskQueueItem.task_key.in_(keys))
-        .where(TaskQueueItem.status.in_(["pending", "running", "retrying"]))
-        .values(status="cancelled")
-    )
+    await _cleanup_instance_side_effects(db, inst)
 
     # 递减父模板执行计数
     task_stmt = select(MetaTask).where(MetaTask.id == inst.meta_task_id)

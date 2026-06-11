@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, model_validator
-from sqlalchemy import select, func, desc, or_, update
+from sqlalchemy import select, func, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,8 +17,8 @@ from app.models.meta_task_llm_config import MetaTaskLlmConfig
 from app.models.system_prompt import SystemPrompt
 from app.models.task_instance import TaskInstance
 from app.models.task_result import TaskResult
-from app.models.task_queue import TaskQueueItem
 from app.models.user import User
+from app.routers.task_instances import _cleanup_instance_side_effects
 from app.utils.exceptions import NotFoundError, PermissionDeniedError, ValidationError
 from app.utils.oplog import log_operation
 from app.routers import get_current_user_from_header, require_admin_user
@@ -412,34 +412,8 @@ async def delete_meta_task(
             )
 
     if instances:
-        instance_ids = [inst.id for inst in instances]
-        instance_nos = [inst.instance_no for inst in instances]
-
-        # 清理 duplicate_ref_id 悬挂指针
-        deleted_result_ids = select(TaskResult.id).where(
-            TaskResult.task_instance_id.in_(instance_ids)
-        )
-        await db.execute(
-            update(TaskResult)
-            .where(TaskResult.duplicate_ref_id.in_(deleted_result_ids))
-            .values(duplicate_ref_id=None, is_duplicate=False)
-        )
-
-        # PdfFile 引用计数递减 + 物理文件清理
-        from app.services.pdf_cleanup import decrement_pdf_refs_for_instance
         for inst in instances:
-            await decrement_pdf_refs_for_instance(db, inst.id)
-
-        # 取消队列中关联的待处理/运行中任务
-        keys = []
-        for no in instance_nos:
-            keys.extend([no, f"llm_{no}", f"download_{no}", f"llm_retry_{no}"])
-        await db.execute(
-            update(TaskQueueItem)
-            .where(TaskQueueItem.task_key.in_(keys))
-            .where(TaskQueueItem.status.in_(["pending", "running", "retrying"]))
-            .values(status="cancelled")
-        )
+            await _cleanup_instance_side_effects(db, inst)
 
         # 删除所有任务实例（ORM 级联 task_results → llm_analysis_results, download_results）
         for inst in instances:
