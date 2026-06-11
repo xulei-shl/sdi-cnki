@@ -286,7 +286,6 @@ async def get_task_instance(
     }
 
 
-@router.delete("/{instance_id}")
 async def _cleanup_instance_side_effects(db: AsyncSession, inst: TaskInstance) -> None:
     """清理实例的关联副作用：悬挂指针、PDF引用、队列任务。
 
@@ -316,6 +315,7 @@ async def _cleanup_instance_side_effects(db: AsyncSession, inst: TaskInstance) -
     )
 
 
+@router.delete("/{instance_id}")
 async def delete_instance(
     instance_id: int,
     current_user = Depends(get_current_user_from_header),

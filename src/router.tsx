@@ -11,6 +11,7 @@ import PromptTemplatePage from '@/pages/system/prompt-template'
 import SystemConfigPage from '@/pages/system/config'
 import AdminNotificationConfigsPage from '@/pages/system/notification-configs'
 import UserSettingsPage from '@/pages/user/settings'
+import UsageGuidePage from '@/pages/usage-guide'
 import NotFoundPage from '@/pages/error/404'
 import ForbiddenPage from '@/pages/error/403'
 
@@ -35,6 +36,7 @@ export const router = createBrowserRouter([
       { path: 'system/prompt-templates', element: <PromptTemplatePage /> },
       { path: 'system/config', element: <SystemConfigPage /> },
       { path: 'system/notification-configs', element: <AdminNotificationConfigsPage /> },
+      { path: 'usage-guide', element: <UsageGuidePage /> },
       { path: '403', element: <ForbiddenPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
