@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.config import get_settings
 from app.models.llm_analysis_result import LlmAnalysisResult
 from app.models.llm_config import LlmConfig
+from app.models.prompt_template import PromptTemplate
 from app.models.system_prompt import SystemPrompt
 from app.models.task_instance import TaskInstance
 from app.models.task_result import TaskResult
@@ -62,7 +63,7 @@ async def run_llm_analysis(
         if not db_configs:
             raise Exception("No active LLM configs available")
 
-        prompt_template = await _load_prompt_template(db, prompt_template_id)
+        prompt_template = await _load_prompt_template(db, prompt_template_id, exec_params)
 
         stmt = select(TaskResult).where(
             TaskResult.task_instance_id == instance_id,
@@ -187,13 +188,84 @@ async def _load_llm_configs(db: AsyncSession, config_ids: list[int]) -> list[dic
     return configs
 
 
-async def _load_prompt_template(db: AsyncSession, prompt_template_id: int | None) -> str | None:
-    if not prompt_template_id:
-        return None
-    stmt = select(SystemPrompt).where(SystemPrompt.id == prompt_template_id, SystemPrompt.is_active == True)
+async def _load_prompt_template(
+    db: AsyncSession,
+    prompt_template_id: int | None,
+    exec_params: dict | None = None,
+) -> str | None:
+    if prompt_template_id:
+        stmt = select(SystemPrompt).where(SystemPrompt.id == prompt_template_id, SystemPrompt.is_active == True)
+        r = await db.execute(stmt)
+        sp = r.scalar_one_or_none()
+        return sp.content if sp else None
+
+    stmt = select(PromptTemplate).where(
+        PromptTemplate.prompt_type == "fallback_analysis",
+        PromptTemplate.is_active == True,
+    )
     r = await db.execute(stmt)
-    sp = r.scalar_one_or_none()
-    return sp.content if sp else None
+    fallback = r.scalar_one_or_none()
+    if fallback:
+        search_conditions = _format_search_conditions(exec_params or {})
+        return fallback.content + "\n\n--- 本次检索条件 ---\n" + search_conditions
+
+    return None
+
+
+def _format_search_conditions(exec_params: dict) -> str:
+    search_params = exec_params.get("search_params") or {}
+    if isinstance(search_params, str):
+        search_params = json.loads(search_params)
+
+    parts = []
+    search_mode = search_params.get("search_mode", "basic")
+
+    if search_mode == "professional":
+        group_a = search_params.get("query_group_a") or []
+        group_b = search_params.get("query_group_b") or []
+        if group_a and group_b:
+            parts.append(f"主题A关键词组：{'、'.join(group_a)}")
+            parts.append(f"主题B关键词组：{'、'.join(group_b)}")
+        elif group_a:
+            parts.append(f"主题关键词组：{'、'.join(group_a)}")
+        elif group_b:
+            parts.append(f"主题关键词组：{'、'.join(group_b)}")
+        au = search_params.get("au_group") or []
+        if au:
+            parts.append(f"作者：{'、'.join(au)}")
+        fu = search_params.get("fu_group") or []
+        if fu:
+            parts.append(f"基金：{'、'.join(fu)}")
+    else:
+        queries = search_params.get("queries") or []
+        if queries:
+            parts.append(f"检索关键词：{'、'.join(queries)}")
+
+    year_from = search_params.get("year_from")
+    year_to = search_params.get("year_to")
+    if year_from and year_to:
+        parts.append(f"出版年份：{year_from}—{year_to}")
+    elif year_from:
+        parts.append(f"出版年份：{year_from}年起")
+    elif year_to:
+        parts.append(f"出版年份：{year_to}年止")
+
+    date_range = search_params.get("date_range")
+    if date_range:
+        range_labels = {
+            "week": "最近一周", "month": "最近一个月",
+            "half-year": "最近半年", "year": "最近一年",
+            "ytd": "今年以来", "last-year": "去年全年",
+        }
+        parts.append(f"更新时间：{range_labels.get(date_range, date_range)}")
+
+    if search_params.get("core_only"):
+        parts.append("来源范围：仅核心期刊")
+
+    if not parts:
+        return "未指定检索条件"
+
+    return "\n".join(parts)
 
 
 def _build_messages(prompt_template: str | None, tr: TaskResult) -> list[dict[str, str]]:
@@ -201,25 +273,17 @@ def _build_messages(prompt_template: str | None, tr: TaskResult) -> list[dict[st
     keywords = tr.keywords or ""
     abstract = tr.abstract or ""
 
-    parts = []
-    if prompt_template:
-        parts.append(prompt_template)
-    else:
-        parts.append("请评估以下学术文献与用户定题的相关性。")
+    if not prompt_template:
+        logger.warning("无可用提示词模板，使用最小兜底提示词")
+        prompt_template = "请评估以下学术文献与用户定题的相关性，并以 JSON 格式输出评分。"
 
+    parts = [prompt_template]
     parts.extend([
         "\n\n--- 文献信息 ---",
         f"\n【题名】{title}" if title else "\n【题名】无",
         f"\n【关键词】{keywords}" if keywords else "\n【关键词】无",
         f"\n【摘要】{abstract}" if abstract else "\n【摘要】无",
     ])
-
-    if not prompt_template:
-        parts.extend([
-            "\n\n请严格以 JSON 格式输出：",
-            '\n{"is_relevant": true/false, "relevance_score": 0-10, "relevance_level": "High"|"Medium"|"Low"|"Irrelevant", "reasoning": "简明理由（限50字）"}',
-        ])
-
     return [{"role": "user", "content": "".join(parts)}]
 
 

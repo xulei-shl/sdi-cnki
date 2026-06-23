@@ -168,6 +168,7 @@ export interface PromptTemplate {
   version: string
   tags: string
   is_active: boolean
+  prompt_type: string
   created_at: string
   updated_at: string
 }

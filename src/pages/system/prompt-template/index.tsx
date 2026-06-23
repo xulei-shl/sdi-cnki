@@ -25,6 +25,9 @@ export default function PromptTemplatePage() {
   const [version, setVersion] = useState('1.0')
   const [tags, setTags] = useState('')
   const [isActive, setIsActive] = useState(true)
+  const [promptType, setPromptType] = useState('general')
+
+  const hasFallback = templates.some(t => t.prompt_type === 'fallback_analysis' && t.id !== editItem?.id)
 
   const fetchData = async () => {
     setLoading(true)
@@ -45,6 +48,7 @@ export default function PromptTemplatePage() {
     setVersion('1.0')
     setTags('')
     setIsActive(true)
+    setPromptType('general')
     setDialogOpen(true)
   }
 
@@ -55,6 +59,7 @@ export default function PromptTemplatePage() {
     setVersion(item.version)
     setTags(item.tags || '')
     setIsActive(item.is_active)
+    setPromptType(item.prompt_type || 'general')
     setDialogOpen(true)
   }
 
@@ -69,6 +74,7 @@ export default function PromptTemplatePage() {
         version: version.trim() || '1.0',
         tags: tags.trim(),
         is_active: isActive,
+        prompt_type: promptType,
       }
       if (editItem) {
         await updatePromptTemplate(editItem.id, data)
@@ -99,6 +105,13 @@ export default function PromptTemplatePage() {
 
   const formatDate = (d: string) => d?.slice(0, 16).replace('T', ' ') || '-'
 
+  const typeBadge = (t: PromptTemplate) => {
+    if (t.prompt_type === 'fallback_analysis') {
+      return <Badge variant="warning" className="text-xs">兜底分析</Badge>
+    }
+    return <Badge variant="outline" className="text-xs">普通</Badge>
+  }
+
   return (
     <div className="h-full flex overflow-hidden relative">
       <div className="flex-1 flex flex-col min-w-0">
@@ -112,6 +125,7 @@ export default function PromptTemplatePage() {
             <TableHeader>
               <TableRow>
                 <TableHead>名称</TableHead>
+                <TableHead>类型</TableHead>
                 <TableHead>版本</TableHead>
                 <TableHead>标签</TableHead>
                 <TableHead>状态</TableHead>
@@ -121,12 +135,13 @@ export default function PromptTemplatePage() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
               ) : templates.length === 0 ? (
-                <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">暂无模板</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">暂无模板</TableCell></TableRow>
               ) : templates.map((t) => (
                 <TableRow key={t.id} className="cursor-pointer" onClick={() => setViewItem(t)}>
                   <TableCell className="font-medium">{t.name}</TableCell>
+                  <TableCell>{typeBadge(t)}</TableCell>
                   <TableCell>{t.version}</TableCell>
                   <TableCell>
                     <div className="flex gap-1 flex-wrap">
@@ -166,6 +181,27 @@ export default function PromptTemplatePage() {
                 <Label>提示词内容 <span className="text-destructive">*</span></Label>
                 <Textarea value={content} onChange={(e) => setContent(e.target.value)} rows={12} className="font-mono text-sm" />
               </div>
+              <div className="space-y-2">
+                <Label>模板类型</Label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="promptType" value="general" checked={promptType === 'general'} onChange={(e) => setPromptType(e.target.value)} />
+                    <span className="text-sm">普通模板</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="promptType" value="fallback_analysis" checked={promptType === 'fallback_analysis'} onChange={(e) => setPromptType(e.target.value)} />
+                    <span className="text-sm">兜底分析模板</span>
+                  </label>
+                </div>
+                {promptType === 'fallback_analysis' && hasFallback && (
+                  <p className="text-xs text-amber-600">已有兜底模板，设置此项将自动替换</p>
+                )}
+                {promptType === 'fallback_analysis' && (
+                  <p className="text-xs text-muted-foreground">
+                    兜底模板在任务未指定提示词时自动使用，系统会动态拼接检索条件。请确保内容包含 JSON 输出格式说明。
+                  </p>
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label>版本</Label>
@@ -199,6 +235,7 @@ export default function PromptTemplatePage() {
         {viewItem && (
           <>
             <DetailSection label="基本信息">
+              <DetailRow label="类型">{viewItem.prompt_type === 'fallback_analysis' ? '兜底分析模板' : '普通模板'}</DetailRow>
               <DetailRow label="版本">{viewItem.version}</DetailRow>
               <DetailRow label="状态">{viewItem.is_active ? '启用' : '禁用'}</DetailRow>
               {viewItem.tags && <DetailRow label="标签">{viewItem.tags}</DetailRow>}

@@ -17,12 +17,16 @@ from app.routers import get_current_user_from_header, require_admin_user
 router = APIRouter()
 
 
+VALID_PROMPT_TYPES = {"general", "fallback_analysis"}
+
+
 class TemplateCreate(BaseModel):
     name: str
     content: str
     version: str = "1.0"
     tags: Optional[str] = None
     is_active: bool = True
+    prompt_type: str = "general"
 
 
 class TemplateUpdate(BaseModel):
@@ -31,6 +35,7 @@ class TemplateUpdate(BaseModel):
     version: Optional[str] = None
     tags: Optional[str] = None
     is_active: Optional[bool] = None
+    prompt_type: Optional[str] = None
 
 
 @router.get("")
@@ -58,6 +63,7 @@ async def list_templates(
                 "version": t.version,
                 "tags": t.tags,
                 "is_active": t.is_active,
+                "prompt_type": t.prompt_type,
                 "updated_at": t.updated_at.isoformat() if t.updated_at else "",
             }
             for t in templates
@@ -74,12 +80,24 @@ async def create_template(
     admin=Depends(require_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
+    if data.prompt_type not in VALID_PROMPT_TYPES:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail=f"无效的 prompt_type: {data.prompt_type}")
+
+    if data.prompt_type == "fallback_analysis":
+        stmt = select(PromptTemplate).where(PromptTemplate.prompt_type == "fallback_analysis")
+        r = await db.execute(stmt)
+        old_fallback = r.scalar_one_or_none()
+        if old_fallback:
+            old_fallback.prompt_type = "general"
+
     template = PromptTemplate(
         name=data.name,
         content=data.content,
         version=data.version,
         tags=data.tags,
         is_active=data.is_active,
+        prompt_type=data.prompt_type,
         created_by=admin.id,
     )
     db.add(template)
@@ -105,6 +123,7 @@ async def get_template(
         "version": template.version,
         "tags": template.tags,
         "is_active": template.is_active,
+        "prompt_type": template.prompt_type,
     }
 
 
@@ -119,6 +138,22 @@ async def update_template(
     template = result.scalar_one_or_none()
     if not template:
         raise NotFoundError("PromptTemplate", template_id)
+
+    if data.prompt_type is not None:
+        if data.prompt_type not in VALID_PROMPT_TYPES:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=422, detail=f"无效的 prompt_type: {data.prompt_type}")
+        if data.prompt_type == "fallback_analysis" and template.prompt_type != "fallback_analysis":
+            stmt = select(PromptTemplate).where(
+                PromptTemplate.prompt_type == "fallback_analysis",
+                PromptTemplate.id != template_id
+            )
+            r = await db.execute(stmt)
+            old_fallback = r.scalar_one_or_none()
+            if old_fallback:
+                old_fallback.prompt_type = "general"
+        template.prompt_type = data.prompt_type
+
     if data.name is not None:
         template.name = data.name
     if data.content is not None:
