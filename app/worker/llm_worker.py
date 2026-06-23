@@ -207,6 +207,8 @@ async def _load_prompt_template(
     fallback = r.scalar_one_or_none()
     if fallback:
         search_conditions = _format_search_conditions(exec_params or {})
+        if "{{search_conditions}}" in fallback.content:
+            return fallback.content.replace("{{search_conditions}}", search_conditions)
         return fallback.content + "\n\n--- 本次检索条件 ---\n" + search_conditions
 
     return None

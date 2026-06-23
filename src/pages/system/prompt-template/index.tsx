@@ -198,7 +198,7 @@ export default function PromptTemplatePage() {
                 )}
                 {promptType === 'fallback_analysis' && (
                   <p className="text-xs text-muted-foreground">
-                    兜底模板在任务未指定提示词时自动使用，系统会动态拼接检索条件。请确保内容包含 JSON 输出格式说明。
+                    兜底模板在任务未指定提示词时自动使用，系统会用实际检索条件替换模板中的 {'{{search_conditions}}'} 占位符。请确保内容包含 JSON 输出格式说明。
                   </p>
                 )}
               </div>
