@@ -15,7 +15,7 @@ const adminItems = [
   { to: '/system/users', label: '用户管理', icon: Users },
   { to: '/system/llm-configs', label: '大模型管理', icon: Cpu },
 
-  { to: '/system/prompt-templates', label: '系统提示词模板', icon: BookOpen },
+  { to: '/system/prompt-templates', label: '提示词模板', icon: BookOpen },
   { to: '/system/config', label: '系统配置', icon: Settings },
   { to: '/system/notification-configs', label: '通知配置', icon: Webhook },
 ]

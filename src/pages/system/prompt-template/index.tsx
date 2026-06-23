@@ -116,7 +116,7 @@ export default function PromptTemplatePage() {
     <div className="h-full flex overflow-hidden relative">
       <div className="flex-1 flex flex-col min-w-0">
         <div className="px-8 py-6 border-b flex items-center justify-between shrink-0">
-          <h2 className="text-lg font-semibold">系统提示词模板</h2>
+          <h2 className="text-lg font-semibold">提示词模板</h2>
           <Button onClick={openCreate}>新建模板</Button>
         </div>
 
