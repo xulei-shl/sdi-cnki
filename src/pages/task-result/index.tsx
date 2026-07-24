@@ -1,107 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Badge } from '@/components/ui/badge'
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
-import { Pagination } from '@/components/ui/pagination'
-import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
-import { Separator } from '@/components/ui/separator'
 import { AxiosError } from 'axios'
 import { toast } from 'sonner'
 import { getTaskInstance, importExcelResults } from '@/api/task-instances'
 import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis, downloadExportFile, retryDownload } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
-import { Check, ChevronLeft, ChevronRight, ChevronDown, X } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import type { TaskInstance, TaskStatus } from '@/types'
-
-const STEP_CONFIG: { label: string; match: TaskStatus[] }[] = [
-  { label: '待执行', match: ['pending'] },
-  { label: '检索排队中', match: ['search_queued'] },
-  { label: '检索中', match: ['running', 'search_completed'] },
-  { label: '分析中', match: ['analyzing'] },
-  { label: '审核中', match: ['analyzing_completed'] },
-  { label: '下载排队中', match: ['download_queued'] },
-  { label: '下载中', match: ['downloading'] },
-  { label: '已完成', match: ['completed'] },
-]
-
-const analysisTextColor = (status?: string, isTargetTopic?: boolean | null) => {
-  if (status === 'failed') return 'text-red-500'
-  if (status === 'analyzing') return 'text-blue-500'
-  if (status === 'completed') {
-    if (isTargetTopic === true) return 'text-green-600'
-    if (isTargetTopic === false) return 'text-amber-500'
-    return 'text-muted-foreground'
-  }
-  return 'text-muted-foreground'
-}
-
-const reviewTextColor = (isPassed: boolean | null) => {
-  if (isPassed === true) return 'text-green-600'
-  if (isPassed === false) return 'text-amber-500'
-  return 'text-muted-foreground'
-}
-
-const downloadTextColor = (status?: string) => {
-  if (status === 'completed') return 'text-green-600'
-  if (status === 'failed') return 'text-red-500'
-  if (status === 'downloading') return 'text-blue-500'
-  if (status === 'skipped') return 'text-yellow-600'
-  return 'text-muted-foreground'
-}
-
-const getAnalysisLabel = (status?: string, parsedResult?: any) => {
-  if (status === 'failed') return '失败'
-  if (status === 'analyzing') return '进行中'
-  if (status === 'completed') {
-    if (parsedResult?.is_target_topic === true) return '通过'
-    if (parsedResult?.is_target_topic === false) return '拒绝'
-    return '已完成'
-  }
-  return '未分析'
-}
-
-const DOWNLOAD_BADGE: Record<string, { label: string; variant: 'success' | 'destructive' | 'secondary' | 'info' | 'warning' }> = {
-  pending: { label: '未下载', variant: 'secondary' },
-  downloading: { label: '下载中', variant: 'info' },
-  completed: { label: '已完成', variant: 'success' },
-  failed: { label: '失败', variant: 'destructive' },
-  skipped: { label: '跳过', variant: 'warning' },
-}
-
-const ANALYSIS_FILTER_OPTIONS = [
-  { label: '分析状态', value: '' },
-  { label: '已完成', value: 'completed' },
-  { label: '未分析', value: 'pending' },
-  { label: '失败', value: 'failed' },
-]
-
-const ANALYSIS_RESULT_OPTIONS = [
-  { label: '分析结论', value: '' },
-  { label: '通过', value: 'passed' },
-  { label: '拒绝', value: 'rejected' },
-]
-
-const REVIEW_OPTIONS = [
-  { label: '审核结论', value: '' },
-  { label: '待审核', value: 'pending' },
-  { label: '已通过', value: 'passed' },
-  { label: '已拒绝', value: 'rejected' },
-]
-
-const DOWNLOAD_STATUS_OPTIONS = [
-  { label: '下载状态', value: '' },
-  { label: '未下载', value: 'pending' },
-  { label: '下载中', value: 'downloading' },
-  { label: '已完成', value: 'completed' },
-  { label: '失败', value: 'failed' },
-  { label: '跳过', value: 'skipped' },
-]
-
+import { STEP_CONFIG } from './constants'
+import { TaskHeader } from './task-header'
+import { ExcelUpload } from './excel-upload'
+import { FilterToolbar } from './filter-toolbar'
+import { ResultTable } from './result-table'
+import { ResultDetailPanel } from './result-detail-panel'
+import type { TaskInstance } from '@/types'
 
 export default function TaskResultPage() {
   const { id } = useParams<{ id: string }>()
@@ -116,6 +27,7 @@ export default function TaskResultPage() {
   const [activeResult, setActiveResult] = useState<any>(null)
   const [activeIndex, setActiveIndex] = useState(0)
   const [showDetail, setShowDetail] = useState(false)
+  const [downloadingIds, setDownloadingIds] = useState<Set<number>>(new Set())
 
   // SSE progress state
   const [analyzeProgress, setAnalyzeProgress] = useState({ active: false, analyzed: 0, total: 0, failed: 0 })
@@ -140,6 +52,8 @@ export default function TaskResultPage() {
   const [importError, setImportError] = useState<string | null>(null)
   const sseRef = useRef<SseClient | null>(null)
   const getAuthToken = () => localStorage.getItem('access_token') || ''
+
+  const resetPage = () => setPage(1)
 
   const fetchInstance = useCallback(async () => {
     try {
@@ -177,6 +91,7 @@ export default function TaskResultPage() {
 
     const sse = new SseClient(instanceId, getAuthToken)
     sseRef.current = sse
+
     sse.on('task.progress', (data: any) => {
       if (data.status === 'analyzing') {
         setAnalyzeProgress({ active: true, analyzed: data.analyzed ?? 0, total: data.total ?? 0, failed: data.failed ?? 0 })
@@ -213,12 +128,12 @@ export default function TaskResultPage() {
     sse.connect()
 
     return () => { sse.close() }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instanceId, instance?.status])
 
   const stepIndex = instance ? STEP_CONFIG.findIndex(s => s.match.includes(instance.status)) : -1
 
-
-
+  // ── Selection ──
   const toggleSelect = (id: number) => {
     setSelectedIds(prev => {
       const next = new Set(prev)
@@ -246,39 +161,27 @@ export default function TaskResultPage() {
     }
   }
 
+  // ── Single row actions ──
   const handleSinglePass = async (row: any) => {
-    try {
-      await markPass(row.id)
-      toast.success('已通过')
-      fetchResults()
-    } catch { toast.error('操作失败') }
+    try { await markPass(row.id); toast.success('已通过'); fetchResults() }
+    catch { toast.error('操作失败') }
   }
 
   const handleSingleReject = async (row: any) => {
-    try {
-      await markReject(row.id)
-      toast.success('已拒绝')
-      fetchResults()
-    } catch { toast.error('操作失败') }
+    try { await markReject(row.id); toast.success('已拒绝'); fetchResults() }
+    catch { toast.error('操作失败') }
   }
-
-  const [downloadingIds, setDownloadingIds] = useState<Set<number>>(new Set())
 
   const handleSingleDownload = async (row: any) => {
     if (downloadingIds.has(row.id)) return
     setDownloadingIds(prev => new Set(prev).add(row.id))
     try {
       const res = await retryDownload(instanceId, row.id)
-      const status = res.data.download_status
-      if (status === 'completed') {
-        toast.success('下载成功')
-      } else {
-        toast.error('下载失败')
-      }
+      if (res.data.download_status === 'completed') toast.success('下载成功')
+      else toast.error('下载失败')
       fetchResults()
-    } catch {
-      toast.error('下载请求失败')
-    } finally {
+    } catch { toast.error('下载请求失败') }
+    finally {
       setDownloadingIds(prev => {
         const next = new Set(prev)
         next.delete(row.id)
@@ -287,6 +190,7 @@ export default function TaskResultPage() {
     }
   }
 
+  // ── Detail navigation ──
   const goToPrev = () => {
     if (activeIndex <= 0) return
     const newIdx = activeIndex - 1
@@ -299,6 +203,13 @@ export default function TaskResultPage() {
     const newIdx = activeIndex + 1
     setActiveIndex(newIdx)
     setActiveResult(results[newIdx])
+  }
+
+  const viewDetail = (row: any) => {
+    const idx = results.findIndex(r => r.id === row.id)
+    setActiveIndex(idx >= 0 ? idx : 0)
+    setActiveResult(row)
+    setShowDetail(true)
   }
 
   const handleDetailPass = async () => {
@@ -323,6 +234,7 @@ export default function TaskResultPage() {
     } catch { toast.error('操作失败') }
   }
 
+  // ── Batch & command actions ──
   const handleBatchPass = () => {
     if (!selectedIds.size) { toast.info('请先选择要操作的项'); return }
     setConfirmAction({ type: 'batch-pass', count: selectedIds.size })
@@ -333,19 +245,9 @@ export default function TaskResultPage() {
     setConfirmAction({ type: 'batch-reject', count: selectedIds.size })
   }
 
-  const handleDownload = () => {
-    setConfirmAction({ type: 'download' })
-  }
-
-  const handleRetryAnalysis = () => {
-    if (retrying) return
-    setConfirmAction({ type: 'retry-analysis' })
-  }
-
-  const handleExport = () => {
-    if (exporting) return
-    setConfirmAction({ type: 'export' })
-  }
+  const handleDownload = () => setConfirmAction({ type: 'download' })
+  const handleRetryAnalysis = () => { if (!retrying) setConfirmAction({ type: 'retry-analysis' }) }
+  const handleExport = () => { if (!exporting) setConfirmAction({ type: 'export' }) }
 
   const handleImportExcel = async () => {
     if (!uploadFile || importing) return
@@ -354,8 +256,7 @@ export default function TaskResultPage() {
     try {
       const res = await importExcelResults(instanceId, uploadFile)
       const d = res.data
-      const msg = `导入成功：共 ${d.total} 条，有效 ${d.valid} 条，重复 ${d.duplicate} 条`
-      toast.success(msg)
+      toast.success(`导入成功：共 ${d.total} 条，有效 ${d.valid} 条，重复 ${d.duplicate} 条`)
       setUploadFile(null)
       fetchInstance()
       fetchResults()
@@ -363,16 +264,13 @@ export default function TaskResultPage() {
       const msg = err?.response?.data?.message || err?.message || '导入失败'
       setImportError(msg)
       toast.error(msg)
-    } finally {
-      setImporting(false)
-    }
+    } finally { setImporting(false) }
   }
 
   const doConfirm = async () => {
     if (!confirmAction) return
     const { type } = confirmAction
     setConfirmAction(null)
-
     try {
       switch (type) {
         case 'batch-pass': {
@@ -428,9 +326,7 @@ export default function TaskResultPage() {
                 } else if (sr.data.status === 'failed') {
                   setExporting(false)
                   toast.error(`导出失败: ${sr.data.error_message || ''}`)
-                } else {
-                  setTimeout(poll, 3000)
-                }
+                } else { setTimeout(poll, 3000) }
               } catch {
                 setExporting(false)
                 toast.error('查询导出状态失败')
@@ -445,444 +341,100 @@ export default function TaskResultPage() {
           break
         }
       }
-    } catch {
-      toast.error('操作失败')
-    }
+    } catch { toast.error('操作失败') }
   }
 
-  const viewDetail = (row: any) => {
-    const idx = results.findIndex(r => r.id === row.id)
-    setActiveIndex(idx >= 0 ? idx : 0)
-    setActiveResult(row)
-    setShowDetail(true)
-  }
-
-  const relevanceColor = (score: number | null) => {
-    if (score === null) return 'text-muted-foreground'
-    if (score >= 7) return 'text-green-600 font-medium'
-    if (score >= 4) return 'text-blue-600'
-    return 'text-gray-400'
-  }
-
-  const formatDate = (d: string | null | undefined) => d ? d.slice(0, 16).replace('T', ' ') : '-'
+  // ── Derived flags ──
+  const instanceStatus = instance?.status || ''
+  const isEditableStatus = ['analyzing_completed', 'downloading'].includes(instanceStatus)
+  const isMoreMenuVisible = ['analyzing_completed', 'download_queued', 'downloading', 'completed', 'failed'].includes(instanceStatus)
+  const canRetryAnalysis = ['analyzing_completed', 'downloading', 'completed', 'failed'].includes(instanceStatus)
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Header Area */}
-      <div className="px-8 pt-5 pb-5 border-b shrink-0 flex flex-col gap-5 bg-muted/10">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate('/task-instances')}>&lt; 返回</Button>
-            <span className="font-medium text-lg">{instance?.instance_no} - {instance?.meta_task_name}</span>
-            {instance?.status === 'failed' && <Badge variant="destructive">{instance.error_message}</Badge>}
-            {instance?.status === 'cancelled' && <Badge variant="secondary">已取消</Badge>}
-          </div>
-          <span className="text-sm text-muted-foreground">{formatDate(instance?.created_at)}</span>
-        </div>
+      <TaskHeader
+        instance={instance}
+        stepIndex={stepIndex}
+        analyzeProgress={analyzeProgress}
+        downloadProgress={downloadProgress}
+        onBack={() => navigate('/task-instances')}
+      />
 
-        {/* Stage Indicator */}
-        <div className="flex items-center justify-between max-w-4xl mx-auto w-full">
-          {STEP_CONFIG.map((step, i) => {
-            const isActive = i === stepIndex
-            const isDone = i < stepIndex
-            const isError = instance?.status === 'failed'
-            return (
-              <div key={step.label} className="flex flex-col items-center gap-1.5">
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-medium border
-                  ${isError && i === STEP_CONFIG.length - 1 ? 'border-destructive bg-destructive text-destructive-foreground' : ''}
-                  ${isActive && !isError ? 'border-primary bg-primary text-primary-foreground shadow-sm' : ''}
-                  ${isDone && !isError ? 'border-green-500 bg-green-500 text-white' : ''}
-                  ${!isActive && !isDone && !(isError && i === STEP_CONFIG.length - 1) ? 'border-muted-foreground/30 text-muted-foreground' : ''}`}>
-                  {isDone ? <Check className="w-3.5 h-3.5" /> : i + 1}
-                </div>
-                <span className={`text-[11px] ${isActive ? 'font-medium text-primary' : isDone ? 'text-green-600' : 'text-muted-foreground'}`}>
-                  {step.label}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-        {analyzeProgress.active && analyzeProgress.total > 0 && (
-          <div className="text-center text-xs text-blue-500 animate-pulse transition-all duration-300">
-            <span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-2" />
-            LLM 分析进度: {analyzeProgress.analyzed} / {analyzeProgress.total} (失败 {analyzeProgress.failed})
-          </div>
-        )}
-        {downloadProgress.active && (
-          <div className="text-center text-xs text-amber-500 animate-pulse transition-all duration-300">
-            <span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-2" />
-            下载进度: 成功 {downloadProgress.success} / 失败 {downloadProgress.failed} / 跳过 {downloadProgress.skipped} / 总计 {downloadProgress.total}
-          </div>
-        )}
-      </div>
-
-      {/* Main Content */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Results Table / Upload Area */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {instance?.status === 'pending' && !instance?.auto_run ? (
-            <div className="flex-1 flex items-center justify-center p-12">
-              <div className="max-w-md w-full space-y-6">
-                <div className="text-center">
-                  <h3 className="text-lg font-medium">Excel 数据导入</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    上传 CNKI 导出的 .xlsx 文件，导入后自动执行查重和 LLM 分析
-                  </p>
-                </div>
-
-                <div className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors">
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls,.csv"
-                    onChange={(e) => {
-                      setUploadFile(e.target.files?.[0] || null)
-                      setImportError(null)
-                    }}
-                    className="hidden"
-                    id="excel-upload"
-                  />
-                  <label htmlFor="excel-upload" className="cursor-pointer block">
-                    {uploadFile ? (
-                      <div>
-                        <p className="font-medium">{uploadFile.name}</p>
-                        <p className="text-sm text-muted-foreground mt-1">点击重新选择</p>
-                      </div>
-                    ) : (
-                      <div>
-                        <p className="font-medium">点击选择文件</p>
-                        <p className="text-sm text-muted-foreground mt-1">支持 .xlsx、.xls、.csv 格式，最多 500 条数据</p>
-                      </div>
-                    )}
-                  </label>
-                </div>
-
-                <Button
-                  className="w-full"
-                  onClick={handleImportExcel}
-                  disabled={!uploadFile || importing}
-                >
-                  {importing ? '导入中...' : '开始导入'}
-                </Button>
-
-                {importError && (
-                  <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 text-sm text-destructive">
-                    {importError}
-                  </div>
-                )}
-
-                <div className="bg-muted/30 rounded-lg p-4 text-sm text-muted-foreground space-y-1">
-                  <p>提示：</p>
-                  <ul className="list-disc list-inside space-y-0.5">
-                    <li>仅支持「确认后运行」创建的未执行任务实例</li>
-                    <li>请上传 CNKI 检索结果导出的 .xlsx、.xls 或 .csv 文件</li>
-                    <li>导入后将自动执行数据查重和 LLM 智能分析</li>
-                    <li>后续流程：审核 → PDF 下载 → 导出</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
+            <ExcelUpload
+              uploadFile={uploadFile}
+              importing={importing}
+              importError={importError}
+              onFileChange={(f) => { setUploadFile(f); setImportError(null) }}
+              onImport={handleImportExcel}
+            />
           ) : (
             <>
-              {/* Action & Filter Toolbar */}
-              <div className="px-8 py-5 border-b flex items-center justify-between flex-wrap gap-6 shrink-0">
-                {/* Filters */}
-                <div className="flex items-center gap-3 flex-wrap">
-                  <Select value={analysisStatus} onChange={(e) => { setAnalysisStatus(e.target.value); setPage(1) }} className="w-[120px]">
-                    {ANALYSIS_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </Select>
-                  <Select value={analysisResult} onChange={(e) => { setAnalysisResult(e.target.value); setPage(1) }} className="w-[120px]">
-                    {ANALYSIS_RESULT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </Select>
-                  <Select value={minScore} onChange={(e) => { setMinScore(e.target.value); setPage(1) }} className="w-[100px]">
-                    <option value="">评分</option>
-                    <option value="4">≥4</option>
-                    <option value="6">≥6</option>
-                    <option value="8">≥8</option>
-                    <option value="9">≥9</option>
-                  </Select>
-                  <div className="w-px h-5 bg-border mx-1" />
-                  <Select value={reviewStatus} onChange={(e) => { setReviewStatus(e.target.value); setPage(1) }} className="w-[120px]">
-                    {REVIEW_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </Select>
-                  <Select value={downloadStatus} onChange={(e) => { setDownloadStatus(e.target.value); setPage(1) }} className="w-[120px]">
-                    {DOWNLOAD_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </Select>
-                  <div className="w-px h-5 bg-border mx-1" />
-                  <Input placeholder="题名关键词" value={keyword} onChange={(e) => { setKeyword(e.target.value); setPage(1) }} className="w-[150px]" />
-                  <Input placeholder="年份" value={publishYear} onChange={(e) => { setPublishYear(e.target.value); setPage(1) }} className="w-[80px]" />
-                  <label className="flex items-center gap-1 text-sm bg-accent/50 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/80 transition-colors">
-                    <Checkbox checked={includeDuplicate} onChange={(e) => { setIncludeDuplicate(e.target.checked); setPage(1) }} />
-                    <span className="ml-1">含重复</span>
-                  </label>
-                </div>
-
-                {/* Batch Actions */}
-                <div className="flex items-center gap-3">
-                  <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchPass}>批量通过</Button>
-                  <Button size="sm" variant="outline" disabled={selectedIds.size === 0} onClick={handleBatchReject}>批量拒绝</Button>
-                  {['analyzing_completed', 'downloading'].includes(instance?.status || '') && (
-                    <Button size="sm" variant="outline" onClick={handleDownload}>PDF 下载</Button>
-                  )}
-                  {['analyzing_completed', 'download_queued', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
-                    <div className="relative">
-                      <Button size="sm" variant="outline" onClick={() => setMoreOpen(!moreOpen)}>
-                        更多 <ChevronDown className="h-3 w-3" />
-                      </Button>
-                      {moreOpen && (
-                        <>
-                          <div className="fixed inset-0 z-40" onClick={() => setMoreOpen(false)} />
-                          <div className="absolute right-0 top-full mt-1 z-50 min-w-[130px] rounded-md border bg-popover p-1 shadow-md">
-                            <button
-                              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:pointer-events-none"
-                              onClick={() => { handleExport(); setMoreOpen(false) }}
-                              disabled={exporting}
-                            >
-                              {exporting ? '导出中...' : '结果导出'}
-                            </button>
-                            {['analyzing_completed', 'downloading', 'completed', 'failed'].includes(instance?.status || '') && (
-                              <button
-                                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:pointer-events-none"
-                                onClick={() => { handleRetryAnalysis(); setMoreOpen(false) }}
-                                disabled={retrying}
-                              >
-                                {retrying ? '分析中...' : 'LLM 分析'}
-                              </button>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Table */}
-              <div className="flex-1 overflow-auto px-8 py-6">
-                {!loading && (
-                  <div className="pb-3 flex items-center gap-4">
-                    <span className="text-sm text-muted-foreground tabular-nums">
-                      {total > 0 ? (
-                        <>共 <span className="font-semibold text-foreground">{total}</span> 条结果</>
-                      ) : (
-                        '未找到匹配的结果'
-                      )}
-                    </span>
-                    {selectedIds.size > 0 && (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-medium text-primary">已选中 {selectedIds.size} 项</span>
-                        <button
-                          onClick={() => setSelectedIds(new Set())}
-                          className="p-1 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors text-muted-foreground"
-                          title="清空选择"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10">
-                        <Checkbox
-                          checked={results.length > 0 && results.every(r => selectedIds.has(r.id))}
-                          ref={el => { if (el) el.indeterminate = results.some(r => selectedIds.has(r.id)) && !results.every(r => selectedIds.has(r.id)) }}
-                          onChange={toggleAll}
-                        />
-                      </TableHead>
-                      <TableHead className="min-w-[350px] flex-1">题名</TableHead>
-                      <TableHead className="w-[180px]">期刊</TableHead>
-                      <TableHead className="w-[70px] text-center">出版年</TableHead>
-                      <TableHead className="w-[120px] text-center">相关性</TableHead>
-                      <TableHead className="w-[180px]">状态 <span className="text-xs font-normal text-muted-foreground">(分析/审核/下载)</span></TableHead>
-                      <TableHead className="w-[160px] text-right">操作</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loading ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center py-12">
-                          <div className="flex items-center justify-center gap-2 text-muted-foreground animate-pulse">
-                            <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-                            数据加载中...
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ) : results.length === 0 ? (
-                      <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">暂无数据</TableCell></TableRow>
-                    ) : results.map((row) => {
-                      const score = row.llm_analysis?.parsed_result?.relevance_score ?? null
-                      return (
-                        <TableRow key={row.id} className="cursor-pointer" onClick={() => viewDetail(row)}>
-                          <TableCell onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-                            <Checkbox checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} />
-                          </TableCell>
-                          <TableCell>
-                            <div className="truncate max-w-none" title={row.title}>
-                              {row.title}
-                              {row.is_duplicate && <Badge variant="warning" className="ml-1 text-xs">重复</Badge>}
-                            </div>
-                          </TableCell>
-                          <TableCell className="truncate max-w-[180px]">{row.source_journal || '-'}</TableCell>
-                          <TableCell className="text-center">{row.publish_year ?? '-'}</TableCell>
-                          <TableCell className="text-center">
-                            <span className={`text-xs ${relevanceColor(score)}`}>{score ?? '-'}</span>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1 text-xs">
-                              <span className={analysisTextColor(row.llm_analysis?.status, row.llm_analysis?.parsed_result?.is_target_topic)}>
-                                {getAnalysisLabel(row.llm_analysis?.status, row.llm_analysis?.parsed_result)}
-                              </span>
-                              <span className="text-muted-foreground">/</span>
-                              <span className={reviewTextColor(row.is_passed)}>
-                                {row.is_passed === true ? '通过' : row.is_passed === false ? '拒绝' : '未审'}
-                              </span>
-                              <span className="text-muted-foreground">/</span>
-                              <span className={downloadTextColor(row.download?.download_status)}>
-                                {DOWNLOAD_BADGE[row.download?.download_status || 'pending'].label}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-                            <div className="flex justify-end gap-3">
-                              {row.is_passed === true && row.download?.download_status !== 'completed' && row.download?.download_status !== 'downloading' && (
-                                <Button variant="link" className="h-auto p-0 font-normal text-amber-600 hover:text-amber-700" disabled={downloadingIds.has(row.id)} onClick={() => handleSingleDownload(row)}>
-                                  {downloadingIds.has(row.id) ? '下载中...' : '下载'}
-                                </Button>
-                              )}
-                              <Button variant="link" className="h-auto p-0 font-normal" onClick={() => handleSinglePass(row)}>通过</Button>
-                              <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={() => handleSingleReject(row)}>拒绝</Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-                <Pagination current={page} total={total} pageSize={20} onChange={setPage} />
-              </div>
+              <FilterToolbar
+                analysisStatus={analysisStatus}
+                analysisResult={analysisResult}
+                minScore={minScore}
+                reviewStatus={reviewStatus}
+                downloadStatus={downloadStatus}
+                keyword={keyword}
+                publishYear={publishYear}
+                includeDuplicate={includeDuplicate}
+                selectedCount={selectedIds.size}
+                moreOpen={moreOpen}
+                exporting={exporting}
+                retrying={retrying}
+                canDownload={isEditableStatus}
+                canShowMore={isMoreMenuVisible}
+                canRetryAnalysis={canRetryAnalysis}
+                onAnalysisStatusChange={(v) => { setAnalysisStatus(v); resetPage() }}
+                onAnalysisResultChange={(v) => { setAnalysisResult(v); resetPage() }}
+                onMinScoreChange={(v) => { setMinScore(v); resetPage() }}
+                onReviewStatusChange={(v) => { setReviewStatus(v); resetPage() }}
+                onDownloadStatusChange={(v) => { setDownloadStatus(v); resetPage() }}
+                onKeywordChange={(v) => { setKeyword(v); resetPage() }}
+                onPublishYearChange={(v) => { setPublishYear(v); resetPage() }}
+                onIncludeDuplicateChange={(v) => { setIncludeDuplicate(v); resetPage() }}
+                onBatchPass={handleBatchPass}
+                onBatchReject={handleBatchReject}
+                onDownload={handleDownload}
+                onExport={handleExport}
+                onRetryAnalysis={handleRetryAnalysis}
+                onMoreToggle={() => setMoreOpen(v => !v)}
+                onMoreClose={() => setMoreOpen(false)}
+              />
+              <ResultTable
+                results={results}
+                loading={loading}
+                total={total}
+                page={page}
+                selectedIds={selectedIds}
+                downloadingIds={downloadingIds}
+                onToggleSelect={toggleSelect}
+                onToggleAll={toggleAll}
+                onClearSelection={() => setSelectedIds(new Set())}
+                onViewDetail={viewDetail}
+                onSinglePass={handleSinglePass}
+                onSingleReject={handleSingleReject}
+                onSingleDownload={handleSingleDownload}
+                onPageChange={setPage}
+              />
             </>
           )}
         </div>
 
-        {/* Right Detail Panel */}
-        <DetailPanel
-          open={showDetail}
-          title={activeResult?.title || ''}
+        <ResultDetailPanel
+          showDetail={showDetail}
+          activeResult={activeResult}
+          activeIndex={activeIndex}
+          totalResults={results.length}
           onClose={() => { setShowDetail(false); setActiveResult(null) }}
-          width={640}
-          headerActions={
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={handleDetailPass}
-                disabled={!activeResult || activeResult.is_passed === true}
-                className="text-xs font-medium text-green-600 hover:text-green-700 transition-colors px-2 py-1 rounded-md hover:bg-green-50 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                通过
-              </button>
-              <button
-                onClick={handleDetailReject}
-                disabled={!activeResult || activeResult.is_passed === false}
-                className="text-xs font-medium text-destructive hover:text-destructive/80 transition-colors px-2 py-1 rounded-md hover:bg-destructive/5 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                拒绝
-              </button>
-              <div className="w-px h-4 bg-border mx-0.5" />
-              <button
-                onClick={goToPrev}
-                disabled={activeIndex <= 0}
-                className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                title="上一条"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                onClick={goToNext}
-                disabled={activeIndex >= results.length - 1}
-                className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                title="下一条"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-              {results.length > 0 && (
-                <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap min-w-[3.5rem] text-center">
-                  {activeIndex + 1}/{results.length}
-                </span>
-              )}
-            </div>
-          }
-        >
-          {activeResult && (
-            <>
-              <DetailSection label="文献信息">
-                <DetailRow label="题名" layout="vertical">{activeResult.title}</DetailRow>
-                <DetailRow label="摘要" layout="vertical">
-                  {activeResult.abstract || '-'}
-                </DetailRow>
-                <DetailRow label="关键词" layout="vertical">{activeResult.keywords || '-'}</DetailRow>
-                <DetailRow label="作者" valueAlign="left">{activeResult.authors || '-'}</DetailRow>
-                <DetailRow label="期刊" valueAlign="left">{activeResult.source_journal || '-'}</DetailRow>
-                <DetailRow label="出版年" valueAlign="left">{activeResult.publish_year ?? '-'}</DetailRow>
-                <DetailRow label="作者单位" layout="vertical">{activeResult.organ || '-'}</DetailRow>
-                <DetailRow label="基金" layout="vertical">{activeResult.fund || '-'}</DetailRow>
-                <DetailRow label="原文链接" valueAlign="left">
-                  {activeResult.original_url ? (
-                    <a href={activeResult.original_url} target="_blank" rel="noopener noreferrer" className="text-primary underline hover:text-primary/80 transition-colors truncate block max-w-[420px]" title={activeResult.original_url}>
-                      {activeResult.original_url}
-                    </a>
-                  ) : '-'}
-                </DetailRow>
-              </DetailSection>
-
-              <Separator />
-
-              <DetailSection label="LLM 分析结果">
-                {activeResult.llm_analysis?.parsed_result ? (
-                  <div className="space-y-0.5">
-                    {Object.entries(activeResult.llm_analysis.parsed_result).map(([key, val]) => {
-                      const isLongText = typeof val === 'string' && val.length > 30
-                      return (
-                        <DetailRow key={key} label={key} layout={isLongText ? 'vertical' : 'horizontal'} valueAlign="left">
-                          {['High', 'Medium', 'Low', 'Irrelevant'].includes(String(val)) ? (
-                            <Badge variant={val === 'High' ? 'success' : val === 'Medium' ? 'info' : val === 'Low' ? 'secondary' : 'destructive'} className="text-xs">
-                              {String(val)}
-                            </Badge>
-                          ) : (
-                            String(val)
-                          )}
-                        </DetailRow>
-                      )
-                    })}
-                  </div>
-                ) : activeResult.llm_analysis?.status === 'failed' ? (
-                  <p className="text-sm text-destructive px-3 py-2">分析失败: {activeResult.llm_analysis.error_message || '未知错误'}</p>
-                ) : (
-                  <p className="text-sm text-muted-foreground px-3 py-2">暂无分析结果</p>
-                )}
-              </DetailSection>
-
-              <Separator />
-
-              <DetailSection label="下载信息">
-                <DetailRow label="下载状态" valueAlign="left">
-                  <Badge variant={DOWNLOAD_BADGE[activeResult.download?.download_status || 'pending'].variant} className="text-xs">
-                    {DOWNLOAD_BADGE[activeResult.download?.download_status || 'pending'].label}
-                  </Badge>
-                </DetailRow>
-                <DetailRow label="文件路径" layout="vertical">{activeResult.download?.pdf_path || '-'}</DetailRow>
-                <DetailRow label="文件大小" valueAlign="left">
-                  {activeResult.download?.file_size ? `${activeResult.download.file_size} KB` : '-'}
-                </DetailRow>
-                {activeResult.download?.download_status === 'failed' && activeResult.download?.error_message && (
-                  <DetailRow label="失败原因" layout="vertical">
-                    <span className="text-destructive text-sm">{activeResult.download.error_message}</span>
-                  </DetailRow>
-                )}
-              </DetailSection>
-            </>
-          )}
-        </DetailPanel>
+          onPass={handleDetailPass}
+          onReject={handleDetailReject}
+          onPrev={goToPrev}
+          onNext={goToNext}
+        />
       </div>
 
       <ConfirmDialog
@@ -892,8 +444,7 @@ export default function TaskResultPage() {
           confirmAction?.type === 'batch-pass' ? '批量通过' :
             confirmAction?.type === 'batch-reject' ? '批量拒绝' :
               confirmAction?.type === 'export' ? '导出确认' :
-                confirmAction?.type === 'retry-analysis' ? 'LLM 分析确认' :
-                  '下载确认'
+                confirmAction?.type === 'retry-analysis' ? 'LLM 分析确认' : '下载确认'
         }
         description={
           confirmAction?.type === 'batch-pass' ? `确认批量通过选中的 ${confirmAction.count} 项结果？` :

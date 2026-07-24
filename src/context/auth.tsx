@@ -14,12 +14,14 @@ interface AuthState {
 const AuthContext = createContext<AuthState | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('access_token'))
   const [user, setUser] = useState<User | null>(() => {
     const stored = localStorage.getItem('user')
     return stored ? JSON.parse(stored) : null
   })
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('access_token'))
-  const [loading, setLoading] = useState(true)
+  // Start with loading=false so cached user renders immediately.
+  // /auth/me validation happens in the background.
+  const loading = false
 
   useEffect(() => {
     if (token) {
@@ -35,9 +37,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.removeItem('refresh_token')
           localStorage.removeItem('user')
         })
-        .finally(() => setLoading(false))
-    } else {
-      setLoading(false)
     }
   }, [token])
 
