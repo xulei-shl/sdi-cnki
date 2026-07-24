@@ -20,10 +20,23 @@ export function useHiagentWidget(appKey: string, baseUrl = 'https://hiagent.libr
         console.error('Hiagent init failed:', err)
       }
     }
-    if ((window as any).HiagentWebSDK?.WebLiteClient) {
-      init()
-    }
+
+    // P3-1: Defer SDK init so it doesn't compete with first-paint / data fetching
+    const timer = setTimeout(() => {
+      if ((window as any).HiagentWebSDK?.WebLiteClient) {
+        init()
+      } else {
+        // SDK not loaded yet — wait for it
+        const onSdkReady = () => {
+          init()
+          window.removeEventListener('hiagent:ready', onSdkReady)
+        }
+        window.addEventListener('hiagent:ready', onSdkReady)
+      }
+    }, 2000)
+
     return () => {
+      clearTimeout(timer)
       SDK_CLASSES.forEach(cls => {
         document.querySelectorAll(`.${cls}`).forEach(el => el.remove())
       })

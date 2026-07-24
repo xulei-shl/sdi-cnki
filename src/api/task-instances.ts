@@ -1,4 +1,5 @@
 import http from '@/lib/http'
+import { withCache, clearCache } from '@/lib/cache'
 import type { TaskInstance, PaginatedResponse } from '@/types'
 
 export interface TaskInstanceQuery {
@@ -11,12 +12,17 @@ export interface TaskInstanceQuery {
   page_size?: number
 }
 
-export function getTaskInstances(params: TaskInstanceQuery = {}) {
-  return http.get<PaginatedResponse<TaskInstance>>('/task-instances', { params })
-}
+export const getTaskInstances = withCache(
+  (params: TaskInstanceQuery = {}) => http.get<PaginatedResponse<TaskInstance>>('/task-instances', { params }),
+  (params: TaskInstanceQuery = {}) => `task-instances:list:${JSON.stringify(params)}`
+)
 
 export function getTaskInstance(id: number) {
   return http.get<TaskInstance>(`/task-instances/${id}`)
+}
+
+export function invalidateTaskInstancesCache() {
+  clearCache('task-instances:')
 }
 
 export function deleteTaskInstance(id: number) {

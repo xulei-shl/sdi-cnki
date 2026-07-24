@@ -15,7 +15,7 @@ export function DetailPanel({ open, title, onClose, children, width = 600, heade
     <>
       <div
         className={cn(
-          "absolute inset-0 bg-background/60 backdrop-blur-sm z-40 transition-all duration-300",
+          "absolute inset-0 bg-background/60 z-40 transition-all duration-300",
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         )}
         onClick={onClose}

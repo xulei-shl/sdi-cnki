@@ -1,8 +1,14 @@
 import http from '@/lib/http'
+import { withCache, clearCache } from '@/lib/cache'
 import type { User, PaginatedResponse } from '@/types'
 
-export function getUsers(params = {}) {
-  return http.get<PaginatedResponse<User>>('/users', { params })
+export const getUsers = withCache(
+  (params = {}) => http.get<PaginatedResponse<User>>('/users', { params }),
+  (params = {}) => `users:list:${JSON.stringify(params)}`
+)
+
+export function invalidateUsersCache() {
+  clearCache('users:')
 }
 
 export function createUser(data: Partial<User> & { password: string }) {

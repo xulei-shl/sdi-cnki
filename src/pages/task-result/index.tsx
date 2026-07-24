@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { AxiosError } from 'axios'
 import { toast } from 'sonner'
 import { getTaskInstance, importExcelResults } from '@/api/task-instances'
-import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis, downloadExportFile, retryDownload } from '@/api/task-results'
+import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis, downloadExportFile, retryDownload, invalidateTaskResultsCache } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { STEP_CONFIG } from './constants'
@@ -56,13 +56,16 @@ export default function TaskResultPage() {
   const resetPage = () => setPage(1)
 
   const fetchInstance = useCallback(async () => {
+    // Not cached — getTaskInstance is a detail endpoint called on row clicks
+    // and SSE events, so caching would add stale-data risk with little benefit.
     try {
       const res = await getTaskInstance(instanceId)
       setInstance(res.data)
     } catch { /* ignore */ }
   }, [instanceId])
 
-  const fetchResults = useCallback(async () => {
+  const fetchResults = useCallback(async (opts?: { fresh?: boolean }) => {
+    if (opts?.fresh) invalidateTaskResultsCache(instanceId)
     setLoading(true)
     try {
       const params: any = { page, page_size: 20 }
@@ -163,12 +166,12 @@ export default function TaskResultPage() {
 
   // ── Single row actions ──
   const handleSinglePass = async (row: any) => {
-    try { await markPass(row.id); toast.success('已通过'); fetchResults() }
+    try { await markPass(row.id); toast.success('已通过'); fetchResults({ fresh: true }) }
     catch { toast.error('操作失败') }
   }
 
   const handleSingleReject = async (row: any) => {
-    try { await markReject(row.id); toast.success('已拒绝'); fetchResults() }
+    try { await markReject(row.id); toast.success('已拒绝'); fetchResults({ fresh: true }) }
     catch { toast.error('操作失败') }
   }
 
@@ -259,7 +262,7 @@ export default function TaskResultPage() {
       toast.success(`导入成功：共 ${d.total} 条，有效 ${d.valid} 条，重复 ${d.duplicate} 条`)
       setUploadFile(null)
       fetchInstance()
-      fetchResults()
+      fetchResults({ fresh: true })
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || '导入失败'
       setImportError(msg)
@@ -279,7 +282,7 @@ export default function TaskResultPage() {
           await batchUpdateResults(instanceId, { result_ids: ids, action: 'pass' })
           toast.success(`已通过 ${ids.length} 条`)
           setSelectedIds(new Set())
-          fetchResults()
+          fetchResults({ fresh: true })
           break
         }
         case 'batch-reject': {
@@ -288,7 +291,7 @@ export default function TaskResultPage() {
           await batchUpdateResults(instanceId, { result_ids: ids, action: 'reject' })
           toast.success(`已拒绝 ${ids.length} 条`)
           setSelectedIds(new Set())
-          fetchResults()
+          fetchResults({ fresh: true })
           break
         }
         case 'download': {

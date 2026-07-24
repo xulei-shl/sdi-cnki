@@ -14,7 +14,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
 import { toast } from 'sonner'
 import { useAuth } from '@/context/auth'
-import { getSystemPrompts, createSystemPrompt, updateSystemPrompt, deleteSystemPrompt } from '@/api/system-prompts'
+import { getSystemPrompts, createSystemPrompt, updateSystemPrompt, deleteSystemPrompt, invalidateSystemPromptsCache } from '@/api/system-prompts'
 import { getPromptTemplates } from '@/api/prompt-templates'
 import type { SystemPrompt, PromptTemplate } from '@/types'
 
@@ -43,7 +43,8 @@ export default function PromptPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
 
-  const fetchData = async () => {
+  const fetchData = async (opts?: { fresh?: boolean }) => {
+    if (opts?.fresh) invalidateSystemPromptsCache()
     setLoading(true)
     try {
       const res = await getSystemPrompts({ page, page_size: 20 })
@@ -118,7 +119,7 @@ export default function PromptPage() {
         toast.success('创建成功')
       }
       setDialogOpen(false)
-      setTimeout(() => fetchData(), 0)
+      setTimeout(() => fetchData({ fresh: true }), 0)
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || '操作失败')
     } finally {
@@ -138,7 +139,7 @@ export default function PromptPage() {
     try {
       await deleteSystemPrompt(confirmDeleteId)
       toast.success('删除成功')
-      fetchData()
+      fetchData({ fresh: true })
     } catch (err: any) {
       const detail = err?.response?.data?.detail || '删除失败'
       toast.error(detail)

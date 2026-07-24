@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { toast } from 'sonner'
-import { getSystemConfigs, updateSystemConfig } from '@/api/system'
+import { getSystemConfigs, updateSystemConfig, invalidateSystemConfigsCache } from '@/api/system'
 
 interface ConfigEntry {
   key: string
@@ -19,7 +19,8 @@ export default function SystemConfigPage() {
   const [editing, setEditing] = useState<Record<string, string>>({})
   const [filterKey, setFilterKey] = useState('')
 
-  const fetchData = async () => {
+  const fetchData = async (opts?: { fresh?: boolean }) => {
+    if (opts?.fresh) invalidateSystemConfigsCache()
     setLoading(true)
     try {
       const res = await getSystemConfigs()
@@ -44,7 +45,7 @@ export default function SystemConfigPage() {
     try {
       await updateSystemConfig(key, editing[key])
       toast.success('保存成功')
-      fetchData()
+      fetchData({ fresh: true })
     } catch {
       toast.error('保存失败')
     }

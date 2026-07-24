@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { getUsers, createUser, updateUser, deleteUser } from '@/api/users'
+import { getUsers, createUser, updateUser, deleteUser, invalidateUsersCache } from '@/api/users'
 import type { User, UserRole } from '@/types'
 
 export default function UserManagePage() {
@@ -25,7 +25,8 @@ export default function UserManagePage() {
   const [role, setRole] = useState<UserRole>('user')
   const [isActive, setIsActive] = useState(true)
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (opts?: { fresh?: boolean }) => {
+    if (opts?.fresh) invalidateUsersCache()
     setLoading(true)
     try {
       const res = await getUsers()
@@ -72,7 +73,7 @@ export default function UserManagePage() {
         toast.success('创建成功')
       }
       setDialogOpen(false)
-      fetchUsers()
+      fetchUsers({ fresh: true })
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || '操作失败')
     } finally {
@@ -85,7 +86,7 @@ export default function UserManagePage() {
     try {
       await deleteUser(id)
       toast.success('删除成功')
-      fetchUsers()
+      fetchUsers({ fresh: true })
     } catch {
       toast.error('删除失败')
     }

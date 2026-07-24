@@ -1,8 +1,14 @@
 import http from '@/lib/http'
+import { withCache, clearCache } from '@/lib/cache'
 import type { LlmConfig, PaginatedResponse } from '@/types'
 
-export function getLlmConfigs(params = {}) {
-  return http.get<PaginatedResponse<LlmConfig>>('/llm-configs', { params })
+export const getLlmConfigs = withCache(
+  (params = {}) => http.get<PaginatedResponse<LlmConfig>>('/llm-configs', { params }),
+  (params = {}) => `llm-configs:list:${JSON.stringify(params)}`
+)
+
+export function invalidateLlmConfigsCache() {
+  clearCache('llm-configs:')
 }
 
 export function createLlmConfig(data: Partial<LlmConfig>) {

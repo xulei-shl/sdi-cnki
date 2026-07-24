@@ -1,4 +1,5 @@
 import http from '@/lib/http'
+import { withCache, clearCache } from '@/lib/cache'
 
 export interface UserNotificationConfigItem {
   user_id: number
@@ -11,6 +12,11 @@ export interface UserNotificationConfigItem {
   updated_at: string | null
 }
 
-export function getAllNotificationConfigs() {
-  return http.get<{ items: UserNotificationConfigItem[]; total: number }>('/admin/user-notification-configs')
+export const getAllNotificationConfigs = withCache(
+  () => http.get<{ items: UserNotificationConfigItem[]; total: number }>('/admin/user-notification-configs'),
+  () => 'admin:notification-configs'
+)
+
+export function invalidateNotificationConfigsCache() {
+  clearCache('admin:')
 }

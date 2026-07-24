@@ -9,7 +9,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
 import { toast } from 'sonner'
-import { getPromptTemplates, createPromptTemplate, updatePromptTemplate, deletePromptTemplate } from '@/api/prompt-templates'
+import { getPromptTemplates, createPromptTemplate, updatePromptTemplate, deletePromptTemplate, invalidatePromptTemplatesCache } from '@/api/prompt-templates'
 import type { PromptTemplate } from '@/types'
 
 export default function PromptTemplatePage() {
@@ -29,7 +29,8 @@ export default function PromptTemplatePage() {
 
   const hasFallback = templates.some(t => t.prompt_type === 'fallback_analysis' && t.id !== editItem?.id)
 
-  const fetchData = async () => {
+  const fetchData = async (opts?: { fresh?: boolean }) => {
+    if (opts?.fresh) invalidatePromptTemplatesCache()
     setLoading(true)
     try {
       const res = await getPromptTemplates()
@@ -84,7 +85,7 @@ export default function PromptTemplatePage() {
         toast.success('创建成功')
       }
       setDialogOpen(false)
-      fetchData()
+      fetchData({ fresh: true })
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || '操作失败')
     } finally {
@@ -97,7 +98,7 @@ export default function PromptTemplatePage() {
     try {
       await deletePromptTemplate(id)
       toast.success('删除成功')
-      fetchData()
+      fetchData({ fresh: true })
     } catch {
       toast.error('删除失败')
     }

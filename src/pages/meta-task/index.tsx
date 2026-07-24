@@ -8,7 +8,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { Pagination } from '@/components/ui/pagination'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
 import { toast } from 'sonner'
-import { getMetaTasks, getMetaTask, deleteMetaTask, executeMetaTask, cloneMetaTask, type MetaTaskQuery } from '@/api/meta-tasks'
+import { getMetaTasks, getMetaTask, deleteMetaTask, executeMetaTask, cloneMetaTask, invalidateMetaTasksCache, type MetaTaskQuery } from '@/api/meta-tasks'
 import { getLlmConfigs } from '@/api/llm-configs'
 import { getSystemPrompts } from '@/api/system-prompts'
 import { MetaTaskDialog } from './dialog'
@@ -41,7 +41,9 @@ export default function MetaTaskPage() {
   const [llmConfigs, setLlmConfigs] = useState<LlmConfig[]>([])
   const [prompts, setPrompts] = useState<SystemPrompt[]>([])
 
-  const fetchTasks = useCallback(async () => {
+  const fetchTasks = useCallback(async (opts?: { fresh?: boolean }) => {
+    // When `fresh: true`, bust cache so mutation results appear immediately
+    if (opts?.fresh) invalidateMetaTasksCache()
     setLoading(true)
     try {
       const params: MetaTaskQuery = { page, page_size: 20 }
@@ -107,7 +109,7 @@ export default function MetaTaskPage() {
     try {
       await deleteMetaTask(confirmDeleteId)
       toast.success('删除成功')
-      fetchTasks()
+      fetchTasks({ fresh: true })
       if (selectedTask?.id === confirmDeleteId) setSelectedTask(null)
     } catch {
       toast.error('删除失败，请检查是否有关联的实例')
@@ -128,7 +130,7 @@ export default function MetaTaskPage() {
     try {
       await cloneMetaTask(confirmCloneId)
       toast.success('复制成功')
-      fetchTasks()
+      fetchTasks({ fresh: true })
     } catch {
       toast.error('复制失败')
     } finally {
@@ -148,7 +150,7 @@ export default function MetaTaskPage() {
     try {
       await executeMetaTask(executeTaskId, autoRun)
       toast.success(autoRun ? '任务已开始执行' : '任务实例已创建')
-      fetchTasks()
+      fetchTasks({ fresh: true })
       setExecuteOpen(false)
     } catch {
       toast.error('执行失败')

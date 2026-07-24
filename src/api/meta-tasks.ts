@@ -1,4 +1,5 @@
 import http from '@/lib/http'
+import { withCache, clearCache } from '@/lib/cache'
 import type { MetaTask, DedupCandidate, PaginatedResponse } from '@/types'
 
 export interface MetaTaskQuery {
@@ -9,8 +10,13 @@ export interface MetaTaskQuery {
   page_size?: number
 }
 
-export function getMetaTasks(params: MetaTaskQuery = {}) {
-  return http.get<PaginatedResponse<MetaTask>>('/meta-tasks', { params })
+export const getMetaTasks = withCache(
+  (params: MetaTaskQuery = {}) => http.get<PaginatedResponse<MetaTask>>('/meta-tasks', { params }),
+  (params: MetaTaskQuery = {}) => `meta-tasks:list:${JSON.stringify(params)}`
+)
+
+export function invalidateMetaTasksCache() {
+  clearCache('meta-tasks:')
 }
 
 export function getMetaTask(id: number) {

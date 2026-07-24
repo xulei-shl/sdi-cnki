@@ -9,7 +9,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
 import { AxiosError } from 'axios'
 import { toast } from 'sonner'
-import { getTaskInstances, getTaskInstance, deleteTaskInstance, runTaskInstance, completeTaskInstance, type TaskInstanceQuery } from '@/api/task-instances'
+import { getTaskInstances, getTaskInstance, deleteTaskInstance, runTaskInstance, completeTaskInstance, invalidateTaskInstancesCache, type TaskInstanceQuery } from '@/api/task-instances'
 import { startExport, getExportStatus, downloadExportFile } from '@/api/task-results'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EditDialog } from './edit-dialog'
@@ -103,7 +103,8 @@ export default function TaskInstancePage() {
     }
   }
 
-  const fetchInstances = useCallback(async () => {
+  const fetchInstances = useCallback(async (opts?: { fresh?: boolean }) => {
+    if (opts?.fresh) invalidateTaskInstancesCache()
     setLoading(true)
     try {
       const params: TaskInstanceQuery = { page, page_size: 20 }
@@ -142,7 +143,7 @@ export default function TaskInstancePage() {
     try {
       await runTaskInstance(confirmRun.id)
       toast.success('任务已加入执行队列')
-      fetchInstances()
+      fetchInstances({ fresh: true })
       if (selectedInstance?.id === confirmRun.id) handleRowClick(confirmRun.id)
     } catch {
       toast.error('执行失败')
@@ -174,7 +175,7 @@ export default function TaskInstancePage() {
     try {
       await deleteTaskInstance(confirmDelete.id)
       toast.success('实例已删除')
-      fetchInstances()
+      fetchInstances({ fresh: true })
       if (selectedInstance?.id === confirmDelete.id) setSelectedInstance(null)
     } catch {
       toast.error('删除失败')
@@ -189,7 +190,7 @@ export default function TaskInstancePage() {
     try {
       await completeTaskInstance(inst.id)
       toast.success('实例已完成')
-      fetchInstances()
+      fetchInstances({ fresh: true })
       if (selectedInstance?.id === inst.id) handleRowClick(inst.id)
     } catch {
       toast.error('操作失败')

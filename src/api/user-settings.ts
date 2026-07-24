@@ -1,7 +1,13 @@
 import http from '@/lib/http'
+import { withCache, clearCache } from '@/lib/cache'
 
-export function getNotificationConfig() {
-  return http.get<{ webhook_url: string | null; enabled: boolean }>('/user/notification-config')
+export const getNotificationConfig = withCache(
+  () => http.get<{ webhook_url: string | null; enabled: boolean }>('/user/notification-config'),
+  () => 'user:notification-config'
+)
+
+export function invalidateNotificationConfigCache() {
+  clearCache('user:')
 }
 
 export function updateNotificationConfig(data: { webhook_url?: string | null; enabled?: boolean }) {

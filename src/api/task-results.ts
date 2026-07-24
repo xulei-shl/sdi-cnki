@@ -1,4 +1,5 @@
 import http from '@/lib/http'
+import { withCache, clearCache } from '@/lib/cache'
 import type { TaskResult, PaginatedResponse } from '@/types'
 
 export interface TaskResultQuery {
@@ -17,8 +18,16 @@ export interface TaskResultQuery {
   sort_order?: 'asc' | 'desc'
 }
 
-export function getTaskResults(instanceId: number, params: Omit<TaskResultQuery, 'instance_id'>) {
-  return http.get<PaginatedResponse<TaskResult>>(`/task-instances/${instanceId}/results`, { params })
+export const getTaskResults = withCache(
+  (instanceId: number, params: Omit<TaskResultQuery, 'instance_id'>) =>
+    http.get<PaginatedResponse<TaskResult>>(`/task-instances/${instanceId}/results`, { params }),
+  (instanceId: number, params: Omit<TaskResultQuery, 'instance_id'>) =>
+    `task-results:list:${instanceId}:${JSON.stringify(params)}`
+)
+
+export function invalidateTaskResultsCache(instanceId?: number) {
+  if (instanceId) clearCache(`task-results:list:${instanceId}`)
+  else clearCache('task-results:')
 }
 
 export function markPass(id: number, isPassed: boolean = true) {

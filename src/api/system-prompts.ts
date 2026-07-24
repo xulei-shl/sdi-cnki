@@ -1,8 +1,14 @@
 import http from '@/lib/http'
+import { withCache, clearCache } from '@/lib/cache'
 import type { SystemPrompt, PaginatedResponse } from '@/types'
 
-export function getSystemPrompts(params = {}) {
-  return http.get<PaginatedResponse<SystemPrompt>>('/system-prompts', { params })
+export const getSystemPrompts = withCache(
+  (params = {}) => http.get<PaginatedResponse<SystemPrompt>>('/system-prompts', { params }),
+  (params = {}) => `system-prompts:list:${JSON.stringify(params)}`
+)
+
+export function invalidateSystemPromptsCache() {
+  clearCache('system-prompts:')
 }
 
 export function createSystemPrompt(data: Partial<SystemPrompt>) {

@@ -1,8 +1,14 @@
 import http from '@/lib/http'
+import { withCache, clearCache } from '@/lib/cache'
 import type { PromptTemplate, PaginatedResponse } from '@/types'
 
-export function getPromptTemplates(params = {}) {
-  return http.get<PaginatedResponse<PromptTemplate>>('/prompt-templates', { params })
+export const getPromptTemplates = withCache(
+  (params = {}) => http.get<PaginatedResponse<PromptTemplate>>('/prompt-templates', { params }),
+  (params = {}) => `prompt-templates:list:${JSON.stringify(params)}`
+)
+
+export function invalidatePromptTemplatesCache() {
+  clearCache('prompt-templates:')
 }
 
 export function createPromptTemplate(data: Partial<PromptTemplate>) {

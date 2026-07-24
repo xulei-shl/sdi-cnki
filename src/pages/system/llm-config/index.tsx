@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { getLlmConfigs, createLlmConfig, updateLlmConfig, deleteLlmConfig, testLlmConfig, testLlmConfigById } from '@/api/llm-configs'
+import { getLlmConfigs, createLlmConfig, updateLlmConfig, deleteLlmConfig, testLlmConfig, testLlmConfigById, invalidateLlmConfigsCache } from '@/api/llm-configs'
 import type { LlmConfig } from '@/types'
 
 export default function LlmConfigPage() {
@@ -25,7 +25,8 @@ export default function LlmConfigPage() {
   const [apiEndpoint, setApiEndpoint] = useState('')
   const [isActive, setIsActive] = useState(true)
 
-  const fetchData = async () => {
+  const fetchData = async (opts?: { fresh?: boolean }) => {
+    if (opts?.fresh) invalidateLlmConfigsCache()
     setLoading(true)
     try {
       const res = await getLlmConfigs()
@@ -78,7 +79,7 @@ export default function LlmConfigPage() {
         toast.success('创建成功')
       }
       setDialogOpen(false)
-      fetchData()
+      fetchData({ fresh: true })
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || '操作失败')
     } finally {
@@ -91,7 +92,7 @@ export default function LlmConfigPage() {
     try {
       await deleteLlmConfig(id)
       toast.success('删除成功')
-      fetchData()
+      fetchData({ fresh: true })
     } catch {
       toast.error('删除失败')
     }

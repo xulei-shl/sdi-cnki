@@ -1,8 +1,14 @@
 import http from '@/lib/http'
+import { withCache, clearCache } from '@/lib/cache'
 import type { SystemConfig } from '@/types'
 
-export function getSystemConfigs() {
-  return http.get<{ items: SystemConfig[] }>('/system/configs')
+export const getSystemConfigs = withCache(
+  () => http.get<{ items: SystemConfig[] }>('/system/configs'),
+  () => 'system:configs'
+)
+
+export function invalidateSystemConfigsCache() {
+  clearCache('system:')
 }
 
 export function updateSystemConfig(key: string, value: string) {
