@@ -13,7 +13,7 @@ export function AppLayout() {
         <div className="flex-1 flex flex-col min-w-0">
           <Header />
           <main className="flex-1 overflow-hidden">
-            <div key={location.pathname} className="route-transition">
+            <div key={location.pathname} className="route-transition h-full">
               <Outlet />
             </div>
           </main>
