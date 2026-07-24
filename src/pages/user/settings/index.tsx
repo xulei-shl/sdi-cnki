@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { toast } from 'sonner'
 import { getNotificationConfig, updateNotificationConfig, testNotificationWebhook } from '@/api/user-settings'
 
@@ -68,39 +69,51 @@ export default function UserSettingsPage() {
     <div className="p-6 h-full flex flex-col max-w-2xl">
       <h2 className="text-lg font-semibold mb-6">通知设置</h2>
 
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-medium">企业微信通知</div>
-            <div className="text-xs text-muted-foreground">任务执行完成或失败时发送通知到企业微信群</div>
-          </div>
-          <Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-        </div>
-
-        {enabled && (
-          <div className="space-y-2">
-            <label className="text-sm font-medium">企业微信 Webhook URL</label>
-            <Input
-              value={webhookUrl}
-              onChange={(e) => setWebhookUrl(e.target.value)}
-              placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
-              className="font-mono text-sm"
+      <Card className="bg-transparent shadow-none">
+        <CardHeader className="px-0">
+          <CardTitle>企业微信通知</CardTitle>
+          <CardDescription>任务执行完成或失败时发送通知到企业微信群</CardDescription>
+        </CardHeader>
+        <CardContent className="px-0 space-y-6">
+          <div className="flex items-center space-x-3">
+            <Checkbox
+              id="wechat-notification"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
             />
-            <p className="text-xs text-muted-foreground">
-              在群机器人中添加 Webhook 后复制地址到此
-            </p>
+            <label
+              htmlFor="wechat-notification"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
+              启用企业微信通知
+            </label>
           </div>
-        )}
 
-        <div className="flex gap-3">
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? '保存中...' : '保存'}
-          </Button>
-          <Button variant="outline" onClick={handleTest} disabled={testing || !webhookUrl.trim()}>
-            {testing ? '发送中...' : '测试'}
-          </Button>
-        </div>
-      </div>
+          {enabled && (
+            <div className="space-y-2 pl-7">
+              <label className="text-sm font-medium">企业微信 Webhook URL</label>
+              <Input
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+                placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                在群机器人中添加 Webhook 后复制地址到此
+              </p>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? '保存中...' : '保存'}
+            </Button>
+            <Button variant="outline" onClick={handleTest} disabled={testing || !webhookUrl.trim()}>
+              {testing ? '发送中...' : '测试'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
