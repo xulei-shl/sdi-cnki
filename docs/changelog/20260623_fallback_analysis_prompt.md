@@ -21,7 +21,11 @@
 - `src/types/index.ts`: `PromptTemplate` 接口增加 `prompt_type`
 - `src/pages/system/prompt-template/index.tsx`: 表格增加「类型」列，编辑对话框增加类型选择 Radio
 
-## 3. 测试结果
+## 3. 后续变更 (2026-06-23)
+- `app/worker/llm_worker.py`: `_load_prompt_template` 增加 `{{search_conditions}}` 占位符替换逻辑，不存在占位符时仍回退至末尾追加
+- `src/pages/system/prompt-template/index.tsx`: 兜底模板说明文案同步更新，告知用户可使用 `{{search_conditions}}` 占位符，并修复 JSX 花括号转义问题
+
+## 4. 测试结果
 - [x] Alembic migration 执行成功（005 → 006）
 - [ ] 单元测试待补充
 - [ ] 核心路径验证待补充

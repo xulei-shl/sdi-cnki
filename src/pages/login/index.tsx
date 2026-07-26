@@ -6,11 +6,17 @@ import { useAuth } from '@/context/auth'
 import { useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import helpContent from './help-content.md?raw'
 
 export default function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
 
@@ -65,8 +71,8 @@ export default function LoginPage() {
       <div className="relative z-[2] min-h-screen flex flex-col">
         {/* Navigation bar */}
         <nav className="flex items-center justify-between px-8 md:px-16 py-6">
-          <span className="text-2xl font-bold text-primary">CNKI</span>
-          <Button variant="ghost" className="text-primary text-sm">
+          <img src="/logo.svg" alt="SDI-CNKI" className="h-7 w-auto" />
+          <Button variant="ghost" className="text-primary text-sm" onClick={() => setHelpOpen(true)}>
             帮助中心
           </Button>
         </nav>
@@ -110,6 +116,18 @@ export default function LoginPage() {
           </Card>
         </div>
       </div>
+
+      {/* Help center dialog */}
+      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] p-0">
+          <DialogTitle className="sr-only">帮助中心</DialogTitle>
+          <ScrollArea className="h-[80vh] p-6">
+            <Markdown remarkPlugins={[remarkGfm]}>
+              {helpContent}
+            </Markdown>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

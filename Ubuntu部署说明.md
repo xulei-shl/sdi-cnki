@@ -13,30 +13,64 @@
 
 ## 更新已有部署（从 Git 拉取新代码后）
 
+根据变更类型选择对应的更新流程：
+
+### 场景 A：仅前端设计 / 前端代码变更
+
 ```bash
-# 1. 拉取最新代码
 git pull
-
-# 2. 检查是否有新的 Python 依赖
-pip install -r requirements.txt
-
-# 3. 应用数据库迁移（关键：新增字段/表结构变更时必须执行）
-alembic upgrade head
-
-# 4. 重新构建前端
 npm install
 npm run build
+systemctl restart sdi-cnki-frontend
+systemctl status sdi-cnki-frontend --no-pager
+```
 
-# 5. 重启服务
+> 前端更新**不涉及后端**，无需重启后端服务，无需数据库迁移。
+
+### 场景 B：仅后端代码变更（无数据库变更）
+
+```bash
+git pull
+systemctl restart sdi-cnki-backend
+systemctl status sdi-cnki-backend --no-pager
+```
+
+> 纯后端逻辑修改（如新增 API、修改 Worker 逻辑、调整配置等），**只需重启后端**。若新增了 Python 依赖，先执行 `pip install -r requirements.txt`。
+
+### 场景 C：后端代码变更 + 数据库变更
+
+```bash
+git pull
+pip install -r requirements.txt
+alembic upgrade head
+systemctl restart sdi-cnki-backend
+systemctl status sdi-cnki-backend --no-pager
+```
+
+> `alembic upgrade head` 是增量迁移，仅应用尚未运行过的迁移脚本，不会丢失数据。迁移脚本位于 `alembic/versions/` 下。若同时涉及前端变更，可在**重启后端前**追加执行场景 A 的构建步骤。
+
+### 场景 D：全量更新（不确定变更范围）
+
+```bash
+git pull
+pip install -r requirements.txt
+alembic upgrade head
+npm install
+npm run build
 systemctl restart sdi-cnki-backend sdi-cnki-frontend
 systemctl status sdi-cnki-backend sdi-cnki-frontend --no-pager
 ```
 
-> **注意**：`alembic upgrade head` 是增量迁移命令，仅应用当前数据库中尚未运行过的迁移脚本，不会丢失已有数据。迁移脚本位于 `alembic/versions/` 目录下。首次全新部署时 `init_db()` 已包含表创建，无需手动执行 `alembic upgrade head`，但更新部署必须执行。
->
-> **v2.1 新增迁移 005**：`user_notification_configs` 表（按账号独立 Webhook 配置），更新部署时需执行 `alembic upgrade head` 创建该表。
->
-> **v2.2 新增专业检索模式**：仅新增 Python 模块和前端交互，**无数据库变更**，无需执行 `alembic upgrade head`。
+> 不确定本次 commit 变更范围时，走全量流程最安全。各步骤均为幂等操作，不会对未变更的模块造成影响。
+
+### 各场景速查表
+
+| 场景 | pip install | alembic upgrade | npm install + build | 重启后端 | 重启前端 |
+|------|:-----------:|:---------------:|:-------------------:|:--------:|:--------:|
+| A：仅前端 | — | — | ✅ | — | ✅ |
+| B：仅后端（无 DB 变更） | 按需 | — | — | ✅ | — |
+| C：后端 + DB 变更 | ✅ | ✅ | 按需 | ✅ | 按需 |
+| D：全量更新 | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ## 前置检查
 
