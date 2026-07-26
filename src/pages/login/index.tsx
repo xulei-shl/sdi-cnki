@@ -119,12 +119,14 @@ export default function LoginPage() {
 
       {/* Help center dialog */}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] p-0">
+        <DialogContent className="max-w-2xl max-h-[80vh] p-0">
           <DialogTitle className="sr-only">帮助中心</DialogTitle>
-          <ScrollArea className="h-[80vh] p-6">
-            <Markdown remarkPlugins={[remarkGfm]}>
-              {helpContent}
-            </Markdown>
+          <ScrollArea className="h-[80vh]">
+            <div className="px-8 py-6 prose prose-stone prose-headings:font-semibold prose-headings:text-foreground prose-h1:text-xl prose-h1:mb-4 prose-h2:text-base prose-h2:mt-6 prose-h2:mb-3 prose-h2:text-muted-foreground prose-p:text-sm prose-p:leading-relaxed prose-li:text-sm prose-li:marker:text-muted-foreground/50 prose-strong:text-foreground prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
+              <Markdown remarkPlugins={[remarkGfm]}>
+                {helpContent}
+              </Markdown>
+            </div>
           </ScrollArea>
         </DialogContent>
       </Dialog>
