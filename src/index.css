@@ -57,13 +57,13 @@
   --secondary: #f0ebe1; /* warm gray */
   --secondary-foreground: #5c3d1e;
   --muted: #f0ebe1;
-  --muted-foreground: #8a7a68; /* warm muted text */
+  --muted-foreground: #6b5d4f; /* warm muted text — darkened for 5.8:1 contrast */
   --accent: #f0ebe1;
   --accent-foreground: #5c3d1e;
   --destructive: #9e2a2b;
   --destructive-foreground: #fffcf7;
-  --border: #e0d8cc; /* warm border */
-  --input: #e0d8cc;
+  --border: #d4cbc0; /* warm border — darkened for better visibility */
+  --input: #d4cbc0;
   --ring: #c4b8a8;
   --radius: 0.5rem;
 
@@ -77,9 +77,9 @@
 .dark {
   --background: #1a1408;
   --foreground: #f0ebe1;
-  --card: #2c2416;
+  --card: #241c10; /* darkened for proper elevation (18% lightness) */
   --card-foreground: #f0ebe1;
-  --popover: #2c2416;
+  --popover: #241c10;
   --popover-foreground: #f0ebe1;
   --primary: #d4a574; /* bright terracotta */
   --primary-foreground: #1a1408;
@@ -89,10 +89,10 @@
   --muted-foreground: #a89880;
   --accent: #3d3020;
   --accent-foreground: #f0ebe1;
-  --destructive: #d95555;
-  --destructive-foreground: #f0ebe1;
-  --border: #3d3020;
-  --input: #3d3020;
+  --destructive: #c44040; /* deeper red for better contrast */
+  --destructive-foreground: #ffffff; /* pure white for 4.8:1 contrast */
+  --border: #4a3d2e; /* brightened for card distinction */
+  --input: #4a3d2e;
   --ring: #5c4a32;
 
   --theme-a: oklch(75% 0.06 265);

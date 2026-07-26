@@ -54,7 +54,7 @@ export default function LoginPage() {
       <div
         className="block md:hidden absolute inset-0 z-0"
         style={{
-          background: 'linear-gradient(135deg, #f7f3eb 0%, #e0d8cc 50%, #c4b8a8 100%)',
+          background: 'linear-gradient(135deg, #f7f3eb 0%, #d4cbc0 50%, #c4b8a8 100%)',
         }}
       />
 
