@@ -9,6 +9,7 @@ import { Pagination } from '@/components/ui/pagination'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
 import { toast } from 'sonner'
 import { getMetaTasks, getMetaTask, deleteMetaTask, executeMetaTask, cloneMetaTask, invalidateMetaTasksCache, type MetaTaskQuery } from '@/api/meta-tasks'
+import { invalidateTaskInstancesCache } from '@/api/task-instances'
 import { getLlmConfigs } from '@/api/llm-configs'
 import { getSystemPrompts } from '@/api/system-prompts'
 import { MetaTaskDialog } from './dialog'
@@ -150,6 +151,7 @@ export default function MetaTaskPage() {
     try {
       await executeMetaTask(executeTaskId, autoRun)
       toast.success(autoRun ? '任务已开始执行' : '任务实例已创建')
+      invalidateTaskInstancesCache()
       fetchTasks({ fresh: true })
       setExecuteOpen(false)
     } catch {
