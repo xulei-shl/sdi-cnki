@@ -271,15 +271,18 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           <DialogTitle>{isEdit ? '编辑任务模板' : '新建任务模板'}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
+        <div className="space-y-8 py-4">
           {/* Basic Info */}
-          <div>
-            <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase">基础信息</h3>
+          <div className="bg-card border border-border rounded-xl p-5 space-y-5 shadow-sm hover:shadow-md transition-shadow duration-200">
+            <div className="border-b border-border/50 pb-2">
+              <h3 className="text-base font-semibold text-foreground tracking-tight">基础信息</h3>
+              <p className="text-sm text-muted-foreground mt-1">填写任务模板的基本信息</p>
+            </div>
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>任务名称 <span className="text-destructive">*</span></Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="最多 200 字" />
-                {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
+              <div className="space-y-2 border-l-2 border-l-destructive/30 pl-3">
+                <Label>任务名称 <span className="text-destructive font-semibold">*</span></Label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="最多 200 字" required />
+                {errors.name && <p className="text-xs text-destructive font-medium">{errors.name}</p>}
               </div>
               <div className="space-y-2">
                 <Label>描述</Label>
@@ -289,8 +292,11 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           </div>
 
           {/* CNKI Search Params */}
-          <div>
-            <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase">CNKI 检索参数</h3>
+          <div className="bg-card border border-border rounded-xl p-5 space-y-5 shadow-sm hover:shadow-md transition-shadow duration-200">
+            <div className="border-b border-border/50 pb-2">
+              <h3 className="text-base font-semibold text-foreground tracking-tight">CNKI 检索参数</h3>
+              <p className="text-sm text-muted-foreground mt-1">配置检索模式与筛选条件</p>
+            </div>
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>检索模式</Label>
@@ -315,9 +321,9 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
               {searchMode === 'professional' ? (
                 <div className="search-params-container space-y-4" style={{ containerType: 'inline-size' }}>
                   {/* Theme Domain: A + B side by side */}
-                  <div className="topic-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div className="topic-grid grid grid-cols-2 gap-4">
                     {/* Theme A */}
-                    <div className="space-y-2.5 border rounded-lg p-3.5 bg-muted/20" style={{ borderColor: 'var(--theme-a-bg)' }}>
+                    <div className="space-y-2.5 border rounded-lg p-3.5 bg-muted/20 transition-shadow duration-200 hover:shadow-md" style={{ borderColor: 'var(--theme-a-bg)' }}>
                       <Label style={{ color: 'var(--theme-a)' }} className="font-semibold text-sm">主题A 关键词组</Label>
                       <p className="text-xs text-muted-foreground">同义词/术语集合（如：阅读推广、全民阅读）</p>
                       {queryGroupA.map((q, idx) => (
@@ -347,7 +353,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
                     </div>
 
                     {/* Theme B */}
-                    <div className="space-y-2.5 border rounded-lg p-3.5 bg-muted/20" style={{ borderColor: 'var(--theme-b-bg)' }}>
+                    <div className="space-y-2.5 border rounded-lg p-3.5 bg-muted/20 transition-shadow duration-200 hover:shadow-md" style={{ borderColor: 'var(--theme-b-bg)' }}>
                       <Label style={{ color: 'var(--theme-b)' }} className="font-semibold text-sm">主题B 关键词组</Label>
                       <p className="text-xs text-muted-foreground">同义词/术语集合（如：AI、大模型、AIGC）</p>
                       {queryGroupB.map((q, idx) => (
@@ -385,10 +391,10 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
                   </div>
 
                   {/* Filter Domain: AU + FU side by side, lighter style */}
-                  <div className="filter-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div className="filter-grid grid grid-cols-2 gap-4">
                     {/* Author */}
-                    <div className="space-y-2 rounded-lg p-3 bg-muted/10">
-                      <Label className="font-medium text-sm text-muted-foreground">作者（可选）</Label>
+                    <div className="space-y-2 rounded-lg p-3 bg-muted/10 transition-shadow duration-200 hover:shadow-md">
+                       <Label className="font-medium text-sm text-muted-foreground">作者（可选）</Label>
                       <p className="text-xs text-muted-foreground">多个作者用 OR 连接</p>
                       {auGroup.map((au, idx) => (
                         <div key={idx} className="flex items-center gap-2 group/row">
@@ -413,8 +419,8 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
                     </div>
 
                     {/* Fund */}
-                    <div className="space-y-2 rounded-lg p-3 bg-muted/10">
-                      <Label className="font-medium text-sm text-muted-foreground">基金（可选）</Label>
+                    <div className="space-y-2 rounded-lg p-3 bg-muted/10 transition-shadow duration-200 hover:shadow-md">
+                       <Label className="font-medium text-sm text-muted-foreground">基金（可选）</Label>
                       <p className="text-xs text-muted-foreground">多个基金用 OR 连接</p>
                       {fuGroup.map((fu, idx) => (
                         <div key={idx} className="flex items-center gap-2 group/row">
@@ -445,8 +451,8 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
                   </div>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <Label>检索词 <span className="text-destructive">*</span></Label>
+                <div className="space-y-2 border-l-2 border-l-destructive/30 pl-3">
+                  <Label>检索词 <span className="text-destructive font-semibold">*</span></Label>
                   {queries.map((q, idx) => (
                     <div key={idx} className="flex items-center gap-2">
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -502,18 +508,14 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
               </div>
 
               <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 text-sm">
+                <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer">
                   <Checkbox checked={coreOnly} onChange={(e) => setCoreOnly(e.target.checked)} />
-                  仅核心来源
-                </label>
-                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-sm">仅核心来源</span>
+                </div>
+                <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer">
                   <Checkbox checked={synonymExtend} onChange={(e) => setSynonymExtend(e.target.checked)} />
-                  同义词扩展
-                </label>
-                {/* <label className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={includeNoFulltext} onChange={(e) => setIncludeNoFulltext(e.target.checked)} />
-                  包含无全文
-                </label> */}
+                  <span className="text-sm">同义词扩展</span>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -528,9 +530,12 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           </div>
 
           {/* 去重范围 */}
-          <div>
-            <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase">去重配置</h3>
-            <div className="space-y-2">
+          <div className="bg-muted/30 border border-border/50 rounded-xl p-4 space-y-4 shadow-sm hover:shadow-md transition-shadow duration-200">
+            <div className="border-b border-border/30 pb-2">
+              <h3 className="text-sm font-semibold text-foreground tracking-tight">去重配置</h3>
+              <p className="text-xs text-muted-foreground mt-1">选择参考任务模板以扩展去重范围</p>
+            </div>
+            <div className="space-y-3">
               <Label>去重范围（可选，多选）</Label>
 
               <Input
@@ -551,7 +556,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
                       return (
                         <label
                           key={c.id}
-                          className="flex items-center gap-2 text-sm py-1 px-1 rounded cursor-pointer hover:bg-accent"
+                          className="flex items-center gap-2 text-sm py-1.5 px-2 rounded-md hover:bg-accent transition-colors cursor-pointer"
                         >
                           <Checkbox
                             checked={checked}
@@ -579,11 +584,14 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           </div>
 
           {/* LLM Config */}
-          <div>
-            <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase">LLM 分析配置</h3>
+          <div className="bg-card border border-border rounded-xl p-5 space-y-4 shadow-sm hover:shadow-md transition-shadow duration-200">
+            <div className="border-b border-border/50 pb-2">
+              <h3 className="text-base font-semibold text-foreground tracking-tight">LLM 分析配置</h3>
+              <p className="text-sm text-muted-foreground mt-1">选择 LLM 配置与提示词模板</p>
+            </div>
             <div className="space-y-3">
-              <div className="space-y-1">
-                <Label>LLM 配置优先级 <span className="text-destructive">*</span></Label>
+              <div className="space-y-1 border-l-2 border-l-destructive/30 pl-3">
+                <Label>LLM 配置优先级 <span className="text-destructive font-semibold">*</span></Label>
                 <div className="border rounded-md p-3 space-y-2">
                   {llmConfigIds.length === 0 ? (
                     <p className="text-sm text-muted-foreground">请从下方选择 LLM 配置</p>
