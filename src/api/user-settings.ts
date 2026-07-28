@@ -3,7 +3,10 @@ import { withCache, clearCache } from '@/lib/cache'
 
 export const getNotificationConfig = withCache(
   () => http.get<{ webhook_url: string | null; enabled: boolean }>('/user/notification-config'),
-  () => 'user:notification-config'
+  () => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    return `user:notification-config:${user.id}`
+  }
 )
 
 export function invalidateNotificationConfigCache() {

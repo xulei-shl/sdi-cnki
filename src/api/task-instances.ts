@@ -14,7 +14,10 @@ export interface TaskInstanceQuery {
 
 export const getTaskInstances = withCache(
   (params: TaskInstanceQuery = {}) => http.get<PaginatedResponse<TaskInstance>>('/task-instances', { params }),
-  (params: TaskInstanceQuery = {}) => `task-instances:list:${JSON.stringify(params)}`
+  (params: TaskInstanceQuery = {}) => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    return `task-instances:list:${user.id}:${JSON.stringify(params)}`
+  }
 )
 
 export function getTaskInstance(id: number) {

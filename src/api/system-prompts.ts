@@ -4,7 +4,10 @@ import type { SystemPrompt, PaginatedResponse } from '@/types'
 
 export const getSystemPrompts = withCache(
   (params = {}) => http.get<PaginatedResponse<SystemPrompt>>('/system-prompts', { params }),
-  (params = {}) => `system-prompts:list:${JSON.stringify(params)}`
+  (params = {}) => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    return `system-prompts:list:${user.id}:${JSON.stringify(params)}`
+  }
 )
 
 export function invalidateSystemPromptsCache() {

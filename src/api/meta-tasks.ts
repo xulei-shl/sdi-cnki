@@ -12,7 +12,10 @@ export interface MetaTaskQuery {
 
 export const getMetaTasks = withCache(
   (params: MetaTaskQuery = {}) => http.get<PaginatedResponse<MetaTask>>('/meta-tasks', { params }),
-  (params: MetaTaskQuery = {}) => `meta-tasks:list:${JSON.stringify(params)}`
+  (params: MetaTaskQuery = {}) => {
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    return `meta-tasks:list:${user.id}:${JSON.stringify(params)}`
+  }
 )
 
 export function invalidateMetaTasksCache() {
