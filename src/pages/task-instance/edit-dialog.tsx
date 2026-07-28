@@ -41,7 +41,7 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
   const [coreOnly, setCoreOnly] = useState(false)
   const [synonymExtend, setSynonymExtend] = useState(false)
   // const [includeNoFulltext, setIncludeNoFulltext] = useState(false)
-  const [maxExport, setMaxExport] = useState(500)
+  const [maxExport, setMaxExport] = useState(50)
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
@@ -113,7 +113,7 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
       setCoreOnly(sp.core_only || false)
       setSynonymExtend(sp.synonym_extend || false)
       // setIncludeNoFulltext(sp.include_no_fulltext || false)
-      setMaxExport(sp.max_export || 500)
+      setMaxExport(sp.max_export || 50)
       setErrors({})
     }
   }, [open, instance])

@@ -730,7 +730,7 @@ class CnkiInteractor:
         if total == 0:
             raise NoResultsError("检索结果为空")
 
-        max_export = params.get("max_export", 500)
+        max_export = params.get("max_export", 50)
         export_limit = min(total, max_export)
         batch_count = (export_limit + EXPORT_BATCH_SIZE - 1) // EXPORT_BATCH_SIZE
         print(f"[CNKI] Export {export_limit} records in {batch_count} batch(es)")
