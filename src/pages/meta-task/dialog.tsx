@@ -4,11 +4,11 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Select } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Plus, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { toast } from 'sonner'
 import { createMetaTask, updateMetaTask, getDedupCandidates } from '@/api/meta-tasks'
 import type { MetaTask, LlmConfig, SystemPrompt, DedupCandidate } from '@/types'
@@ -273,8 +273,8 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
 
         <div className="space-y-8 py-4">
           {/* Basic Info */}
-          <div className="bg-card border border-border rounded-xl p-5 space-y-5 shadow-sm hover:shadow-md transition-shadow duration-200">
-            <div className="border-b border-border/50 pb-2">
+          <div className="bg-secondary/30 border border-border/60 rounded-xl p-5 space-y-5 shadow-sm hover:shadow-md transition-shadow duration-200">
+            <div className="border-b border-border/40 pb-2">
               <h3 className="text-base font-semibold text-foreground tracking-tight">基础信息</h3>
               <p className="text-sm text-muted-foreground mt-1">填写任务模板的基本信息</p>
             </div>
@@ -292,8 +292,8 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           </div>
 
           {/* CNKI Search Params */}
-          <div className="bg-card border border-border rounded-xl p-5 space-y-5 shadow-sm hover:shadow-md transition-shadow duration-200">
-            <div className="border-b border-border/50 pb-2">
+          <div className="bg-secondary/30 border border-border/60 rounded-xl p-5 space-y-5 shadow-sm hover:shadow-md transition-shadow duration-200">
+            <div className="border-b border-border/40 pb-2">
               <h3 className="text-base font-semibold text-foreground tracking-tight">CNKI 检索参数</h3>
               <p className="text-sm text-muted-foreground mt-1">配置检索模式与筛选条件</p>
             </div>
@@ -304,14 +304,14 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
                   <button
                     type="button"
                     onClick={() => setSearchMode('basic')}
-                    className={`px-3 py-1.5 text-sm rounded-md transition-colors ${searchMode === 'basic' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+                    className={`px-3 py-1.5 text-sm rounded-md transition-all duration-200 ${searchMode === 'basic' ? 'bg-primary text-primary-foreground shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}
                   >
                     普通检索
                   </button>
                   <button
                     type="button"
                     onClick={() => setSearchMode('professional')}
-                    className={`px-3 py-1.5 text-sm rounded-md transition-colors ${searchMode === 'professional' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+                    className={`px-3 py-1.5 text-sm rounded-md transition-all duration-200 ${searchMode === 'professional' ? 'bg-primary text-primary-foreground shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}
                   >
                     专业检索
                   </button>
@@ -530,50 +530,55 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           </div>
 
           {/* 去重范围 */}
-          <div className="bg-muted/30 border border-border/50 rounded-xl p-4 space-y-4 shadow-sm hover:shadow-md transition-shadow duration-200">
-            <div className="border-b border-border/30 pb-2">
+          <div className="bg-secondary/30 border border-border/60 rounded-xl p-4 space-y-4 shadow-sm hover:shadow-md transition-shadow duration-200">
+            <div className="border-b border-border/40 pb-2">
               <h3 className="text-sm font-semibold text-foreground tracking-tight">去重配置</h3>
               <p className="text-xs text-muted-foreground mt-1">选择参考任务模板以扩展去重范围</p>
             </div>
             <div className="space-y-3">
               <Label>去重范围（可选，多选）</Label>
 
-              <Input
-                placeholder="搜索任务模板..."
-                value={dedupSearch}
-                onChange={e => setDedupSearch(e.target.value)}
-              />
-
-              <ScrollArea className="border rounded-md p-2 max-h-48">
-                {dedupFiltered.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-2 text-center">
-                    {dedupCandidates.length === 0 ? '无可选任务模板' : '无匹配模板'}
-                  </p>
-                ) : (
-                  <div className="space-y-0.5">
-                    {dedupFiltered.map(c => {
-                      const checked = dedupScopeMetaTaskIds.includes(c.id)
-                      return (
-                        <label
-                          key={c.id}
-                          className="flex items-center gap-2 text-sm py-1.5 px-2 rounded-md hover:bg-accent transition-colors cursor-pointer"
-                        >
-                          <Checkbox
-                            checked={checked}
-                            onChange={() => {
-                              setDedupScopeMetaTaskIds(prev =>
-                                checked ? prev.filter(x => x !== c.id) : [...prev, c.id]
-                              )
-                            }}
-                          />
-                          <span className="truncate">{c.name}</span>
-                          <span className="text-xs text-muted-foreground shrink-0">（{c.creator_name}）</span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                )}
-              </ScrollArea>
+               <Command shouldFilter={false}>
+                 <CommandInput
+                   placeholder="搜索任务模板..."
+                   value={dedupSearch}
+                   onValueChange={setDedupSearch}
+                 />
+                 <CommandList>
+                   {dedupFiltered.length === 0 ? (
+                     <CommandEmpty>
+                       {dedupCandidates.length === 0 ? '无可选任务模板' : '无匹配模板'}
+                     </CommandEmpty>
+                   ) : (
+                     <CommandGroup>
+                       {dedupFiltered.map(c => {
+                         const checked = dedupScopeMetaTaskIds.includes(c.id)
+                         return (
+                           <CommandItem
+                             key={c.id}
+                             onSelect={() => {
+                               setDedupScopeMetaTaskIds(prev =>
+                                 checked ? prev.filter(x => x !== c.id) : [...prev, c.id]
+                               )
+                             }}
+                           >
+                             <Checkbox
+                               checked={checked}
+                               onCheckedChange={() => {
+                                 setDedupScopeMetaTaskIds(prev =>
+                                   checked ? prev.filter(x => x !== c.id) : [...prev, c.id]
+                                 )
+                               }}
+                             />
+                             <span className="truncate">{c.name}</span>
+                             <span className="text-xs text-muted-foreground shrink-0">（{c.creator_name}）</span>
+                           </CommandItem>
+                         )
+                       })}
+                     </CommandGroup>
+                   )}
+                 </CommandList>
+               </Command>
 
               <div className="flex items-center justify-between">
                 <p className="text-xs text-muted-foreground">共 {dedupFiltered.length} 个模板，已选 {dedupScopeMetaTaskIds.length} 个</p>
@@ -584,8 +589,8 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           </div>
 
           {/* LLM Config */}
-          <div className="bg-card border border-border rounded-xl p-5 space-y-4 shadow-sm hover:shadow-md transition-shadow duration-200">
-            <div className="border-b border-border/50 pb-2">
+          <div className="bg-secondary/30 border border-border/60 rounded-xl p-5 space-y-4 shadow-sm hover:shadow-md transition-shadow duration-200">
+            <div className="border-b border-border/40 pb-2">
               <h3 className="text-base font-semibold text-foreground tracking-tight">LLM 分析配置</h3>
               <p className="text-sm text-muted-foreground mt-1">选择 LLM 配置与提示词模板</p>
             </div>

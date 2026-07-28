@@ -196,14 +196,14 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
               <button
                 type="button"
                 onClick={() => setSearchMode('basic')}
-                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${searchMode === 'basic' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+                    className={`px-3 py-1.5 text-sm rounded-md transition-all duration-200 ${searchMode === 'basic' ? 'bg-primary text-primary-foreground shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}
               >
                 普通检索
               </button>
               <button
                 type="button"
                 onClick={() => setSearchMode('professional')}
-                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${searchMode === 'professional' ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+                    className={`px-3 py-1.5 text-sm rounded-md transition-all duration-200 ${searchMode === 'professional' ? 'bg-primary text-primary-foreground shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}
               >
                 专业检索
               </button>
@@ -215,7 +215,7 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
               {/* Theme Domain: A + B side by side */}
               <div className="topic-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 {/* Theme A */}
-                <div className="space-y-2.5 border rounded-lg p-3.5 bg-muted/20" style={{ borderColor: 'var(--theme-a-bg)' }}>
+                <div className="space-y-2.5 border rounded-lg p-3.5 bg-secondary/30" style={{ borderColor: 'var(--theme-a-bg)' }}>
                   <Label style={{ color: 'var(--theme-a)' }} className="font-semibold text-sm">主题A 关键词组</Label>
                   <p className="text-xs text-muted-foreground">同义词/术语集合（如：阅读推广、全民阅读）</p>
                   {queryGroupA.map((q, idx) => (
@@ -245,7 +245,7 @@ export function EditDialog({ open, onOpenChange, instance, onSuccess }: EditDial
                 </div>
 
                 {/* Theme B */}
-                <div className="space-y-2.5 border rounded-lg p-3.5 bg-muted/20" style={{ borderColor: 'var(--theme-b-bg)' }}>
+                <div className="space-y-2.5 border rounded-lg p-3.5 bg-secondary/30" style={{ borderColor: 'var(--theme-b-bg)' }}>
                   <Label style={{ color: 'var(--theme-b)' }} className="font-semibold text-sm">主题B 关键词组</Label>
                   <p className="text-xs text-muted-foreground">同义词/术语集合（如：AI、大模型、AIGC）</p>
                   {queryGroupB.map((q, idx) => (
