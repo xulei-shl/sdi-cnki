@@ -79,7 +79,7 @@ async def list_task_instances(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     keyword: Optional[str] = Query(None),
-    template_name: Optional[str] = Query(None),
+    template_keyword: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None),
     current_user = Depends(get_current_user_from_header),
     db: AsyncSession = Depends(get_db),
@@ -91,9 +91,9 @@ async def list_task_instances(
         where.append(TaskInstance.status == status_filter)
     if keyword:
         where.append(TaskInstance.instance_no.ilike(f"%{keyword}%"))
-    if template_name:
+    if template_keyword:
         mt_ids = await db.execute(
-            select(MetaTask.id).where(MetaTask.name.ilike(f"%{template_name}%"))
+            select(MetaTask.id).where(MetaTask.name.ilike(f"%{template_keyword}%"))
         )
         mt_ids_list = [r[0] for r in mt_ids.all()]
         if mt_ids_list:
