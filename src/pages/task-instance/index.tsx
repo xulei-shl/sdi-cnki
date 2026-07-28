@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,6 +19,9 @@ const DATE_RANGE_LABELS: Record<string, string> = {
   week: '最近一周', month: '最近一月', 'half-year': '最近半年',
   year: '最近一年', ytd: '今年迄今', 'last-year': '上一年度',
 }
+
+const POLL_INTERVAL = 10_000
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled'])
 
 const STATUS_MAP: Record<TaskStatus, { label: string; variant: 'info' | 'warning' | 'success' | 'destructive' | 'secondary' | 'default' | 'purple' | 'cyan' | 'orange' }> = {
   pending: { label: '待执行', variant: 'secondary' },
@@ -67,6 +70,12 @@ export default function TaskInstancePage() {
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editInstance, setEditInstance] = useState<TaskInstance | null>(null)
   const [exportingId, setExportingId] = useState<number | null>(null)
+  const pollingRef = useRef<number | null>(null)
+  const fetchInstancesRef = useRef<typeof fetchInstances | null>(null)
+
+  const hasActiveTasks = instances.some(
+    (inst) => !TERMINAL_STATUSES.has(inst.status),
+  )
 
   const handleExport = async (e: React.MouseEvent, inst: TaskInstance) => {
     e.stopPropagation()
@@ -118,8 +127,49 @@ export default function TaskInstancePage() {
       setLoading(false)
     }
   }, [page, keyword, templateName, statusFilter])
+  fetchInstancesRef.current = fetchInstances
 
   useEffect(() => { fetchInstances() }, [fetchInstances])
+
+  useEffect(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+      pollingRef.current = null
+    }
+
+    if (!hasActiveTasks) return
+
+    pollingRef.current = window.setInterval(() => {
+      fetchInstancesRef.current!({ fresh: true })
+    }, POLL_INTERVAL)
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current)
+        pollingRef.current = null
+      }
+    }
+  }, [hasActiveTasks])
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current)
+          pollingRef.current = null
+        }
+      } else if (hasActiveTasks && !pollingRef.current) {
+        pollingRef.current = window.setInterval(() => {
+          fetchInstancesRef.current!({ fresh: true })
+        }, POLL_INTERVAL)
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [hasActiveTasks])
 
   const handleRowClick = async (instanceId: number) => {
     setDetailLoading(true)
