@@ -255,14 +255,21 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
   const hasDateRange = dateRange !== ''
   const hasYearRange = yearFrom !== '' || yearTo !== ''
 
-  const dedupFiltered = useMemo(() => {
-    const q = dedupSearch.trim().toLowerCase()
-    return dedupCandidates.filter(c => {
-      if (c.id === editTask?.id) return false
-      if (!q) return true
-      return c.name.toLowerCase().includes(q)
-    })
-  }, [dedupCandidates, dedupSearch, editTask])
+   const dedupFiltered = useMemo(() => {
+     const q = dedupSearch.trim().toLowerCase()
+     const filtered = dedupCandidates.filter(c => {
+       if (c.id === editTask?.id) return false
+       if (!q) return true
+       return c.name.toLowerCase().includes(q)
+     })
+     const selected = new Set(dedupScopeMetaTaskIds)
+     return filtered.sort((a, b) => {
+       const aChecked = selected.has(a.id) ? 0 : 1
+       const bChecked = selected.has(b.id) ? 0 : 1
+       if (aChecked !== bChecked) return aChecked - bChecked
+       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+     })
+   }, [dedupCandidates, dedupSearch, editTask, dedupScopeMetaTaskIds])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -538,7 +545,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
             <div className="space-y-3">
               <Label>去重范围（可选，多选）</Label>
 
-               <Command shouldFilter={false}>
+                <Command shouldFilter={false} className="bg-secondary/30 border border-border/60 rounded-xl shadow-sm overflow-hidden">
                  <CommandInput
                    placeholder="搜索任务模板..."
                    value={dedupSearch}
@@ -554,9 +561,10 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
                        {dedupFiltered.map(c => {
                          const checked = dedupScopeMetaTaskIds.includes(c.id)
                          return (
-                           <CommandItem
-                             key={c.id}
-                             onSelect={() => {
+                            <CommandItem
+                              key={c.id}
+                              className="gap-2"
+                              onSelect={() => {
                                setDedupScopeMetaTaskIds(prev =>
                                  checked ? prev.filter(x => x !== c.id) : [...prev, c.id]
                                )

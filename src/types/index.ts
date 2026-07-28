@@ -40,6 +40,7 @@ export interface DedupCandidate {
   id: number
   name: string
   creator_name: string
+  created_at: string
 }
 
 export interface SearchParams {

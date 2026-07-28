@@ -252,7 +252,7 @@ async def list_dedup_candidates(
     result = await db.execute(stmt)
     tasks = result.scalars().all()
     return [
-        {"id": t.id, "name": t.name, "creator_name": t.creator.username if t.creator else ""}
+        {"id": t.id, "name": t.name, "creator_name": t.creator.username if t.creator else "", "created_at": t.created_at.isoformat() if t.created_at else ""}
         for t in tasks
     ]
 
