@@ -8,7 +8,7 @@ from pathlib import Path
 
 from app.utils import timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -44,10 +44,17 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
     await db.commit()
 
     try:
-        rec_stmt = select(TaskResult).where(
-            TaskResult.task_instance_id == instance_id,
-            TaskResult.is_duplicate == False,
-            TaskResult.is_passed == True,
+        rec_stmt = (
+            select(TaskResult)
+            .where(
+                TaskResult.task_instance_id == instance_id,
+                TaskResult.is_duplicate == False,
+                TaskResult.is_passed == True,
+                ~exists().where(
+                    DownloadResult.task_result_id == TaskResult.id,
+                    DownloadResult.download_status == 'completed',
+                )
+            )
         )
         rec_result = await db.execute(rec_stmt)
         records = rec_result.scalars().all()

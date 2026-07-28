@@ -256,7 +256,17 @@ export default function TaskResultPage() {
     setConfirmAction({ type: 'batch-reject', count: selectedIds.size })
   }
 
-  const handleDownload = () => setConfirmAction({ type: 'download' })
+  const handleDownload = () => {
+    const unreviewedCount = results.filter(r =>
+      r.llm_analysis?.parsed_result?.is_target_topic === true &&
+      r.is_passed === null
+    ).length
+    if (unreviewedCount > 0) {
+      setConfirmAction({ type: 'download-unreviewed', count: unreviewedCount })
+    } else {
+      setConfirmAction({ type: 'download' })
+    }
+  }
   const handleRetryAnalysis = () => { if (!retrying) setConfirmAction({ type: 'retry-analysis' }) }
   const handleExport = () => { if (!exporting) setConfirmAction({ type: 'export' }) }
 
@@ -305,6 +315,9 @@ export default function TaskResultPage() {
         case 'download': {
           await startDownload(instanceId)
           toast.success('下载任务已加入队列')
+          break
+        }
+        case 'download-unreviewed': {
           break
         }
         case 'retry-analysis': {
@@ -456,16 +469,19 @@ export default function TaskResultPage() {
           confirmAction?.type === 'batch-pass' ? '批量通过' :
             confirmAction?.type === 'batch-reject' ? '批量拒绝' :
               confirmAction?.type === 'export' ? '导出确认' :
-                confirmAction?.type === 'retry-analysis' ? 'LLM 分析确认' : '下载确认'
+                confirmAction?.type === 'retry-analysis' ? 'LLM 分析确认' :
+                  confirmAction?.type === 'download-unreviewed' ? '存在未审核记录' :
+                    '下载确认'
         }
         description={
           confirmAction?.type === 'batch-pass' ? `确认批量通过选中的 ${confirmAction.count} 项结果？` :
             confirmAction?.type === 'batch-reject' ? `确认批量拒绝选中的 ${confirmAction.count} 项结果？` :
               confirmAction?.type === 'export' ? '确认导出当前任务的所有搜索结果？此操作将导出数据为 Excel 文件。' :
                 confirmAction?.type === 'retry-analysis' ? '确认重新运行 LLM 分析？此操作将重新分析所有搜索结果。' :
-                  '确认下载所有结果的 PDF 文件？'
+                  confirmAction?.type === 'download-unreviewed' ? `存在 ${confirmAction.count} 条LLM分析通过但未人工审核的记录，请先完成人工审核后再执行批量下载。` :
+                    '确认下载所有结果的 PDF 文件？'
         }
-        variant={confirmAction?.type === 'batch-reject' ? 'destructive' : 'default'}
+        variant={confirmAction?.type === 'batch-reject' || confirmAction?.type === 'download-unreviewed' ? 'destructive' : 'default'}
         confirmText="确认"
         onConfirm={doConfirm}
       />
