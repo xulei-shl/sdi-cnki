@@ -28,6 +28,7 @@ export default function TaskResultPage() {
   const [activeIndex, setActiveIndex] = useState(0)
   const [showDetail, setShowDetail] = useState(false)
   const [downloadingIds, setDownloadingIds] = useState<Set<number>>(new Set())
+  const [processingIds, setProcessingIds] = useState<Set<number>>(new Set())
 
   // SSE progress state
   const [analyzeProgress, setAnalyzeProgress] = useState({ active: false, analyzed: 0, total: 0, failed: 0 })
@@ -166,13 +167,19 @@ export default function TaskResultPage() {
 
   // ── Single row actions ──
   const handleSinglePass = async (row: any) => {
-    try { await markPass(row.id); toast.success('已通过'); fetchResults({ fresh: true }) }
+    if (processingIds.has(row.id)) return
+    setProcessingIds(prev => new Set(prev).add(row.id))
+    try { await markPass(row.id); toast.success('已通过'); setResults(prev => prev.map(r => r.id === row.id ? { ...r, is_passed: true } : r)) }
     catch { toast.error('操作失败') }
+    finally { setProcessingIds(prev => { const next = new Set(prev); next.delete(row.id); return next }) }
   }
 
   const handleSingleReject = async (row: any) => {
-    try { await markReject(row.id); toast.success('已拒绝'); fetchResults({ fresh: true }) }
+    if (processingIds.has(row.id)) return
+    setProcessingIds(prev => new Set(prev).add(row.id))
+    try { await markReject(row.id); toast.success('已拒绝'); setResults(prev => prev.map(r => r.id === row.id ? { ...r, is_passed: false } : r)) }
     catch { toast.error('操作失败') }
+    finally { setProcessingIds(prev => { const next = new Set(prev); next.delete(row.id); return next }) }
   }
 
   const handleSingleDownload = async (row: any) => {
@@ -180,9 +187,10 @@ export default function TaskResultPage() {
     setDownloadingIds(prev => new Set(prev).add(row.id))
     try {
       const res = await retryDownload(instanceId, row.id)
-      if (res.data.download_status === 'completed') toast.success('下载成功')
-      else toast.error('下载失败')
-      fetchResults()
+      const downloadStatus = res.data.download_status
+      if (downloadStatus === 'completed') toast.success('下载成功')
+      else if (downloadStatus === 'failed') toast.error('下载失败')
+      setResults(prev => prev.map(r => r.id === row.id ? { ...r, download: { ...r.download, download_status: downloadStatus, pdf_path: res.data.pdf_path ?? r.download?.pdf_path, file_size: res.data.file_size ?? r.download?.file_size } } : r))
     } catch { toast.error('下载请求失败') }
     finally {
       setDownloadingIds(prev => {
@@ -282,7 +290,7 @@ export default function TaskResultPage() {
           await batchUpdateResults(instanceId, { result_ids: ids, action: 'pass' })
           toast.success(`已通过 ${ids.length} 条`)
           setSelectedIds(new Set())
-          fetchResults({ fresh: true })
+          setResults(prev => prev.map(r => ids.includes(r.id) ? { ...r, is_passed: true } : r))
           break
         }
         case 'batch-reject': {
@@ -291,7 +299,7 @@ export default function TaskResultPage() {
           await batchUpdateResults(instanceId, { result_ids: ids, action: 'reject' })
           toast.success(`已拒绝 ${ids.length} 条`)
           setSelectedIds(new Set())
-          fetchResults({ fresh: true })
+          setResults(prev => prev.map(r => ids.includes(r.id) ? { ...r, is_passed: false } : r))
           break
         }
         case 'download': {
@@ -414,6 +422,7 @@ export default function TaskResultPage() {
                 page={page}
                 selectedIds={selectedIds}
                 downloadingIds={downloadingIds}
+                processingIds={processingIds}
                 onToggleSelect={toggleSelect}
                 onToggleAll={toggleAll}
                 onClearSelection={() => setSelectedIds(new Set())}

@@ -13,6 +13,7 @@ interface ResultTableProps {
   page: number
   selectedIds: Set<number>
   downloadingIds: Set<number>
+  processingIds: Set<number>
   onToggleSelect: (id: number) => void
   onToggleAll: () => void
   onClearSelection: () => void
@@ -30,6 +31,7 @@ export function ResultTable({
   page,
   selectedIds,
   downloadingIds,
+  processingIds,
   onToggleSelect,
   onToggleAll,
   onClearSelection,
@@ -97,7 +99,7 @@ export function ResultTable({
           ) : results.map((row) => {
             const score = row.llm_analysis?.parsed_result?.relevance_score ?? null
             return (
-              <TableRow key={row.id} className="cursor-pointer" onClick={() => onViewDetail(row)}>
+              <TableRow key={row.id} className="cursor-pointer transition-colors" onClick={() => onViewDetail(row)}>
                 <TableCell onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                   <Checkbox checked={selectedIds.has(row.id)} onChange={() => onToggleSelect(row.id)} />
                 </TableCell>
@@ -134,8 +136,8 @@ export function ResultTable({
                         {downloadingIds.has(row.id) ? '下载中...' : '下载'}
                       </Button>
                     )}
-                    <Button variant="link" className="h-auto p-0 font-normal" onClick={() => onSinglePass(row)}>通过</Button>
-                    <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" onClick={() => onSingleReject(row)}>拒绝</Button>
+                    <Button variant="link" className="h-auto p-0 font-normal" disabled={processingIds.has(row.id)} onClick={() => onSinglePass(row)}>通过</Button>
+                    <Button variant="link" className="h-auto p-0 font-normal text-destructive hover:text-destructive/80" disabled={processingIds.has(row.id)} onClick={() => onSingleReject(row)}>拒绝</Button>
                   </div>
                 </TableCell>
               </TableRow>
