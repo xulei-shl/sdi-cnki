@@ -8,17 +8,19 @@ const TooltipProvider = ({ children, ...props }: { children: React.ReactNode; de
   </div>
 )
 
-const Tooltip = ({ children, content, className }: { children: React.ReactNode; content: React.ReactNode; className?: string }) => (
-  <div className="relative group inline-block">
+const Tooltip = ({ children, content, className, wrapperClassName, disabled }: { children: React.ReactNode; content: React.ReactNode; className?: string; wrapperClassName?: string; disabled?: boolean }) => (
+  <div className={cn('relative group inline-block', wrapperClassName)}>
     {children}
-    <div
-      className={cn(
-        'absolute z-50 px-2 py-1 text-xs rounded-md bg-primary text-primary-foreground shadow-md whitespace-nowrap invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 -translate-x-1/2 left-1/2 bottom-full mb-1',
-        className,
-      )}
-    >
-      {content}
-    </div>
+    {!disabled && (
+      <div
+        className={cn(
+          'absolute z-50 px-3 py-2 text-sm rounded-lg bg-[#efe4d8] text-foreground border border-[#e0d3c4] shadow-md whitespace-nowrap invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 -translate-x-1/2 left-1/2 bottom-full mb-1',
+          className,
+        )}
+      >
+        {content}
+      </div>
+    )}
   </div>
 )
 Tooltip.displayName = 'Tooltip'

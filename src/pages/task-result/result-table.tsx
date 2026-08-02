@@ -1,10 +1,36 @@
+import { useState, useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Tooltip } from '@/components/ui/tooltip'
 import { Pagination } from '@/components/ui/pagination'
 import { analysisTextColor, reviewTextColor, downloadTextColor, getAnalysisLabel, relevanceColor, DOWNLOAD_BADGE } from './constants'
+
+function TitleCell({ title, isDuplicate }: { title: string; isDuplicate?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [truncated, setTruncated] = useState(false)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const check = () => setTruncated(el.scrollWidth > el.clientWidth)
+    check()
+    const observer = new ResizeObserver(check)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [title])
+
+  return (
+    <Tooltip content={title} className="whitespace-normal max-w-[360px] break-words" wrapperClassName="w-full" disabled={!truncated}>
+      <div ref={ref} className="truncate">
+        {title}
+        {isDuplicate && <Badge variant="warning" className="ml-1 text-xs">重复</Badge>}
+      </div>
+    </Tooltip>
+  )
+}
 
 interface ResultTableProps {
   results: any[]
@@ -66,7 +92,7 @@ export function ResultTable({
           )}
         </div>
       )}
-      <Table>
+      <Table className="table-fixed">
         <TableHeader>
           <TableRow>
             <TableHead className="w-10">
@@ -76,7 +102,7 @@ export function ResultTable({
                 onChange={onToggleAll}
               />
             </TableHead>
-            <TableHead className="min-w-[350px] flex-1">题名</TableHead>
+            <TableHead className="w-[600px]">题名</TableHead>
             <TableHead className="w-[180px]">期刊</TableHead>
             <TableHead className="w-[70px] text-center">出版年</TableHead>
             <TableHead className="w-[120px] text-center">相关性</TableHead>
@@ -104,10 +130,7 @@ export function ResultTable({
                   <Checkbox checked={selectedIds.has(row.id)} onChange={() => onToggleSelect(row.id)} />
                 </TableCell>
                 <TableCell>
-                  <div className="truncate max-w-none" title={row.title}>
-                    {row.title}
-                    {row.is_duplicate && <Badge variant="warning" className="ml-1 text-xs">重复</Badge>}
-                  </div>
+                  <TitleCell title={row.title} isDuplicate={row.is_duplicate} />
                 </TableCell>
                 <TableCell className="truncate max-w-[180px]">{row.source_journal || '-'}</TableCell>
                 <TableCell className="text-center">{row.publish_year ?? '-'}</TableCell>
