@@ -11,7 +11,7 @@ settings = get_settings()
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import select, func, desc, or_, update
+from sqlalchemy import delete, select, func, desc, or_, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -36,17 +36,27 @@ router = APIRouter()
 _instance_dl_locks: dict[int, asyncio.Lock] = {}
 
 
-async def _create_instance(db: AsyncSession, task: MetaTask, user, auto_run: bool = True) -> TaskInstance:
+async def _allocate_instance_no(db: AsyncSession) -> str:
+    """原子分配当天下一个实例编号 T{YYYYMMDD}{seq:03d}。
+
+    基于 instance_no_counters 表自增取号，删除实例后编号不回收，永不复用。
+    """
     today = timezone.now().strftime("%Y%m%d")
-    last = await db.execute(
-        select(func.max(TaskInstance.instance_no))
-        .where(TaskInstance.instance_no.like(f"T{today}%"))
+    result = await db.execute(
+        text(
+            "INSERT INTO instance_no_counters (date, last_seq) "
+            "VALUES (:d, 1) "
+            "ON CONFLICT(date) DO UPDATE SET last_seq = instance_no_counters.last_seq + 1 "
+            "RETURNING last_seq"
+        ),
+        {"d": today},
     )
-    last_no = last.scalar()
-    seq = 1
-    if last_no:
-        seq = int(last_no[-3:]) + 1
-    instance_no = f"T{today}{seq:03d}"
+    seq = result.scalar_one()
+    return f"T{today}{seq:03d}"
+
+
+async def _create_instance(db: AsyncSession, task: MetaTask, user, auto_run: bool = True) -> TaskInstance:
+    instance_no = await _allocate_instance_no(db)
     execution_params = {
         "search_params": json.loads(task.search_params) if isinstance(task.search_params, str) else task.search_params,
         "prompt_template_id": task.prompt_template_id,
@@ -684,11 +694,18 @@ async def retry_llm_analysis(
 
     from app.task_queue.crud import TaskQueueService
     svc = TaskQueueService(db)
+    await db.execute(
+        delete(TaskQueueItem).where(
+            TaskQueueItem.task_key == f"llm_retry_{inst.instance_no}",
+            TaskQueueItem.status.in_(["pending", "completed", "failed", "retrying"]),
+        )
+    )
     await svc.enqueue(
         queue_type="llm",
         task_type="llm_analysis",
         params_json=json.dumps({"instance_id": instance_id, "instance_no": inst.instance_no, "retry_failed_only": True}),
         task_key=f"llm_retry_{inst.instance_no}",
+        commit=False,
     )
     inst.status = "analyzing"
     await db.commit()
@@ -714,11 +731,18 @@ async def run_task_instance(
         raise ValidationError(f"Cannot run instance with status: {inst.status}")
     from app.task_queue.crud import TaskQueueService
     svc = TaskQueueService(db)
+    await db.execute(
+        delete(TaskQueueItem).where(
+            TaskQueueItem.task_key == inst.instance_no,
+            TaskQueueItem.status.in_(["pending", "completed", "failed", "retrying"]),
+        )
+    )
     await svc.enqueue(
         queue_type="cnki",
         task_type="cnki_search",
         params_json=json.dumps({"instance_id": instance_id, "instance_no": inst.instance_no}),
         task_key=inst.instance_no,
+        commit=False,
     )
     inst.status = "search_queued"
     await db.commit()

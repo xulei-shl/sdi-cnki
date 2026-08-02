@@ -23,6 +23,7 @@ class TaskQueueService:
         priority: int = 0,
         max_retries: int = 3,
         timeout_sec: int = 1800,
+        commit: bool = True,
     ) -> TaskQueueItem:
         item = TaskQueueItem(
             queue_type=queue_type,
@@ -35,8 +36,9 @@ class TaskQueueService:
             status="pending",
         )
         self.db.add(item)
-        await self.db.commit()
-        await self.db.refresh(item)
+        if commit:
+            await self.db.commit()
+            await self.db.refresh(item)
         return item
 
     async def dequeue(self, queue_type: str) -> TaskQueueItem | None:

@@ -16,3 +16,4 @@ from app.models.operation_log import OperationLog
 from app.models.task_queue import TaskQueueItem
 from app.models.export_task import ExportTask
 from app.models.user_notification_config import UserNotificationConfig
+from app.models.instance_no_counter import InstanceNoCounter

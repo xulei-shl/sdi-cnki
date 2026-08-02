@@ -59,6 +59,22 @@ async def _cleanup_orphan_dedup_scopes():
         )
 
 
+async def _seed_instance_no_counters(conn):
+    """从现存实例回填每日编号计数器，保证编号永不复用。
+
+    取每天现存实例的最大 seq 作为计数器初值；当天首个新建实例从 max+1 开始，
+    不会与现存实例冲突，也不受后续删除影响。
+    """
+    await conn.execute(
+        text(
+            "INSERT OR IGNORE INTO instance_no_counters (date, last_seq) "
+            "SELECT substr(instance_no, 2, 8) AS d, "
+            "MAX(CAST(substr(instance_no, 10) AS INTEGER)) AS s "
+            "FROM task_instances GROUP BY d"
+        )
+    )
+
+
 async def init_db():
     async with engine.begin() as conn:
         from app.models import Base
@@ -66,6 +82,7 @@ async def init_db():
         await _migrate_system_prompts(conn)
         await _seed_default_admin(conn)
         await _seed_default_configs(conn)
+        await _seed_instance_no_counters(conn)
     await _cleanup_orphan_dedup_scopes()
 
 

@@ -529,6 +529,7 @@ async def execute_meta_task(
             task_type="cnki_search",
             params_json=json.dumps({"instance_id": instance.id, "instance_no": instance.instance_no}),
             task_key=instance.instance_no,
+            commit=False,
         )
         instance.status = "search_queued"
         await db.commit()
