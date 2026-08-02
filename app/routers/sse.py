@@ -27,6 +27,11 @@ router = APIRouter()
 _event_store: dict[int, list[dict[str, Any]]] = {}
 _event_conditions: dict[int, asyncio.Condition] = {}
 
+# Global event store for list-page SSE (all users, client-side filtering)
+_global_event_store: list[dict[str, Any]] = []
+_global_event_condition = asyncio.Condition()
+_MAX_GLOBAL_EVENTS = 1000
+
 
 async def broadcast_event(instance_id: int, event_type: str, data: dict) -> None:
     """Push event to store and notify SSE listeners."""
@@ -37,6 +42,14 @@ async def broadcast_event(instance_id: int, event_type: str, data: dict) -> None
     if instance_id in _event_conditions:
         async with _event_conditions[instance_id]:
             _event_conditions[instance_id].notify_all()
+
+    # Also broadcast to global store for list-page SSE
+    global_event = {"instance_id": instance_id, "event": event_type, "data": json.dumps(data, ensure_ascii=False)}
+    async with _global_event_condition:
+        _global_event_store.append(global_event)
+        if len(_global_event_store) > _MAX_GLOBAL_EVENTS:
+            _global_event_store[:100] = []
+        _global_event_condition.notify_all()
 
 
 async def _get_instance_status(db: AsyncSession, instance_id: int) -> dict | None:
@@ -124,6 +137,46 @@ async def sse_events(
                         _event_store.pop(instance_id, None)
                         _event_conditions.pop(instance_id, None)
                     return
+        except asyncio.CancelledError:
+            pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/events")
+async def sse_global_events(
+    request: Request,
+    current_user=Depends(get_current_user_from_header),
+):
+    """SSE endpoint that streams events for all instances visible to the current user.
+    Client filters events by instance_id on the receiving end."""
+    async def event_generator():
+        last_index = len(_global_event_store)
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+
+                async with _global_event_condition:
+                    try:
+                        await asyncio.wait_for(_global_event_condition.wait(), timeout=30)
+                    except asyncio.TimeoutError:
+                        yield "event: ping\ndata: {}\n\n"
+                        continue
+
+                while last_index < len(_global_event_store):
+                    event = _global_event_store[last_index]
+                    last_index += 1
+                    data_with_instance = {"instance_id": event["instance_id"], **json.loads(event["data"])}
+                    yield f"event: {event['event']}\ndata: {json.dumps(data_with_instance, ensure_ascii=False)}\n\n"
         except asyncio.CancelledError:
             pass
 
