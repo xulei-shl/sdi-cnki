@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
-import { MessageSquare, Mail, Play } from 'lucide-react'
+import { MessageSquare, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 import { getNotificationConfig, updateNotificationConfig, testNotificationWebhook, testEmailNotification } from '@/api/user-settings'
 import type { NotificationConfig } from '@/api/user-settings'
@@ -34,7 +34,9 @@ function serializeFlags(flags: Record<string, boolean>): string {
 export default function UserSettingsPage() {
   const [config, setConfig] = useState<NotificationConfig | null>(null)
   const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [savingWechat, setSavingWechat] = useState(false)
+  const [savingEmail, setSavingEmail] = useState(false)
+  const [savingModules, setSavingModules] = useState(false)
   const [testingWebhook, setTestingWebhook] = useState(false)
   const [testingEmail, setTestingEmail] = useState(false)
 
@@ -66,7 +68,7 @@ export default function UserSettingsPage() {
   useEffect(() => { fetchConfig() }, [])
 
   const handleSaveWechat = async () => {
-    setSaving(true)
+    setSavingWechat(true)
     try {
       const res = await updateNotificationConfig({
         webhook_url: webhookUrl.trim() || null,
@@ -76,11 +78,11 @@ export default function UserSettingsPage() {
       setConfig(res.data)
       toast.success('企微通知保存成功')
     } catch { toast.error('保存失败') }
-    finally { setSaving(false) }
+    finally { setSavingWechat(false) }
   }
 
   const handleSaveEmail = async () => {
-    setSaving(true)
+    setSavingEmail(true)
     try {
       const res = await updateNotificationConfig({
         email_enabled: emailEnabled,
@@ -90,7 +92,7 @@ export default function UserSettingsPage() {
       setConfig(res.data)
       toast.success('邮件通知保存成功')
     } catch { toast.error('保存失败') }
-    finally { setSaving(false) }
+    finally { setSavingEmail(false) }
   }
 
   const handleTestWebhook = async () => {
@@ -119,7 +121,7 @@ export default function UserSettingsPage() {
   }
 
   const handleSaveModules = async () => {
-    setSaving(true)
+    setSavingModules(true)
     try {
       const res = await updateNotificationConfig({
         module_flags: serializeFlags(moduleFlags),
@@ -128,7 +130,7 @@ export default function UserSettingsPage() {
       setConfig(res.data)
       toast.success('模块通知配置保存成功')
     } catch { toast.error('保存失败') }
-    finally { setSaving(false) }
+    finally { setSavingModules(false) }
   }
 
   if (loading) {
@@ -165,15 +167,23 @@ export default function UserSettingsPage() {
               />
               <span className="text-sm">启用企业微信通知</span>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleTestWebhook}
-              disabled={testingWebhook || !webhookUrl.trim()}
-            >
-              <Play className="h-3.5 w-3.5 mr-1.5" />
-              测试
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTestWebhook}
+                disabled={testingWebhook || !webhookUrl.trim()}
+              >
+                测试
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSaveWechat}
+                disabled={savingWechat}
+              >
+                {savingWechat ? '保存中...' : '保存'}
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -204,15 +214,23 @@ export default function UserSettingsPage() {
               />
               <span className="text-sm">启用邮件通知</span>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleTestEmail}
-              disabled={testingEmail || !emailTo.trim()}
-            >
-              <Play className="h-3.5 w-3.5 mr-1.5" />
-              测试
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTestEmail}
+                disabled={testingEmail || !emailTo.trim()}
+              >
+                测试
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSaveEmail}
+                disabled={savingEmail}
+              >
+                {savingEmail ? '保存中...' : '保存'}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -273,10 +291,10 @@ export default function UserSettingsPage() {
           <div className="flex justify-end mt-3">
             <Button
               onClick={handleSaveModules}
-              disabled={saving}
+              disabled={savingModules}
               size="sm"
             >
-              {saving ? '保存中...' : '保存'}
+              {savingModules ? '保存中...' : '保存'}
             </Button>
           </div>
         </div>
