@@ -86,11 +86,8 @@ async def _seed_default_admin(conn):
 
 
 async def _seed_default_configs(conn):
-    """插入默认系统配置（幂等，仅空表时执行）。"""
+    """插入默认系统配置（幂等，INSERT OR IGNORE）。"""
     from sqlalchemy import text as sql_text
-    result = await conn.execute(sql_text("SELECT COUNT(*) FROM system_configs"))
-    if result.scalar() > 0:
-        return
     defaults = [
         ("cnki_search_timeout", "1800", "CNKI 检索超时（秒）"),
         ("llm_analysis_batch_size", "5", "LLM 批量分析并发数"),
@@ -104,7 +101,7 @@ async def _seed_default_configs(conn):
     for key, value, description in defaults:
         await conn.execute(
             sql_text(
-                "INSERT INTO system_configs (key, value, description, updated_by, updated_at) "
+                "INSERT OR IGNORE INTO system_configs (key, value, description, updated_by, updated_at) "
                 "VALUES (:key, :value, :desc, 1, datetime('now'))"
             ),
             {"key": key, "value": value, "desc": description},
