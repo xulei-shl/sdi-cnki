@@ -283,7 +283,6 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           <div className="bg-secondary/30 border border-border/60 rounded-xl p-5 space-y-5 shadow-sm hover:shadow-md transition-shadow duration-200">
             <div className="border-b border-border/40 pb-2">
               <h3 className="text-base font-semibold text-foreground tracking-tight">基础信息</h3>
-              <p className="text-sm text-muted-foreground mt-1">填写任务模板的基本信息</p>
             </div>
             <div className="space-y-4">
               <div className="space-y-2 border-l-2 border-l-destructive/30 pl-3">
@@ -302,7 +301,6 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           <div className="bg-secondary/30 border border-border/60 rounded-xl p-5 space-y-5 shadow-sm hover:shadow-md transition-shadow duration-200">
             <div className="border-b border-border/40 pb-2">
               <h3 className="text-base font-semibold text-foreground tracking-tight">CNKI 检索参数</h3>
-              <p className="text-sm text-muted-foreground mt-1">配置检索模式与筛选条件</p>
             </div>
             <div className="space-y-4">
               <div className="space-y-2">
@@ -540,7 +538,6 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           <div className="bg-secondary/30 border border-border/60 rounded-xl p-4 space-y-4 shadow-sm hover:shadow-md transition-shadow duration-200">
             <div className="border-b border-border/40 pb-2">
               <h3 className="text-sm font-semibold text-foreground tracking-tight">去重配置</h3>
-              <p className="text-xs text-muted-foreground mt-1">选择参考任务模板以扩展去重范围</p>
             </div>
             <div className="space-y-3">
               <Label>去重范围（可选，多选）</Label>
@@ -600,7 +597,6 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
           <div className="bg-secondary/30 border border-border/60 rounded-xl p-5 space-y-4 shadow-sm hover:shadow-md transition-shadow duration-200">
             <div className="border-b border-border/40 pb-2">
               <h3 className="text-base font-semibold text-foreground tracking-tight">LLM 分析配置</h3>
-              <p className="text-sm text-muted-foreground mt-1">选择 LLM 配置与提示词模板</p>
             </div>
             <div className="space-y-3">
               <div className="space-y-1 border-l-2 border-l-destructive/30 pl-3">
@@ -637,6 +633,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
                   </div>
                 </div>
                 {errors.llmConfig && <p className="text-xs text-destructive">{errors.llmConfig}</p>}
+                <p className="text-xs text-muted-foreground">可配置多个大模型并按优先级排序，主模型失败后自动切换备用模型</p>
               </div>
 
               <div className="space-y-2">
@@ -647,6 +644,7 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </Select>
+                <p className="text-xs text-muted-foreground">不选择则使用系统默认通用模板，已选提示词将作为本次检索的评判标准</p>
               </div>
             </div>
           </div>
