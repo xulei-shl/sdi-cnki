@@ -4,6 +4,14 @@ import { Badge } from '@/components/ui/badge'
 import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detail-panel'
 import { DOWNLOAD_BADGE } from './constants'
 
+const LLM_LABEL_MAP: Record<string, string> = {
+  is_target_topic: '是否相关',
+  relevance_score: '相关性评分',
+  relevance_level: '相关性等级',
+  reasoning: '分析理由',
+  domain_keywords: '领域关键词',
+}
+
 interface ResultDetailPanelProps {
   showDetail: boolean
   activeResult: any
@@ -104,7 +112,7 @@ export function ResultDetailPanel({
                 {Object.entries(activeResult.llm_analysis.parsed_result).map(([key, val]) => {
                   const isLongText = typeof val === 'string' && val.length > 30
                   return (
-                    <DetailRow key={key} label={key} layout={isLongText ? 'vertical' : 'horizontal'} valueAlign="left">
+                    <DetailRow key={key} label={LLM_LABEL_MAP[key] ?? key} layout={isLongText ? 'vertical' : 'horizontal'} valueAlign="left">
                       {['High', 'Medium', 'Low', 'Irrelevant'].includes(String(val)) ? (
                         <Badge variant={val === 'High' ? 'success' : val === 'Medium' ? 'info' : val === 'Low' ? 'secondary' : 'destructive'} className="text-xs">
                           {String(val)}
