@@ -22,9 +22,7 @@ def _parse_flags(raw: str | None) -> dict[str, bool]:
         return {}
 
 
-def _check_module_flag(flags: dict[str, bool], module_key: str | None, is_failure: bool) -> bool:
-    if is_failure:
-        return True
+def _check_module_flag(flags: dict[str, bool], module_key: str | None) -> bool:
     if not module_key:
         return True
     if not flags:
@@ -181,9 +179,8 @@ async def send_wecom_notification(
             logger.info("用户未配置 Webhook URL，跳过企微通知")
             return
 
-        is_failure = instance_data.get("status", "") == "failed"
         flags = _parse_flags(config.module_flags)
-        if not _check_module_flag(flags, module_key, is_failure):
+        if not _check_module_flag(flags, module_key):
             logger.info(f"企微通知被 module_flags 过滤（module_key={module_key}, status={instance_data.get('status')}）")
             return
 

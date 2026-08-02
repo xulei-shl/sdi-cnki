@@ -37,12 +37,10 @@ async def send_notification(
             logger.info(f"用户 {user_id} 未配置通知，跳过")
             return
 
-        is_failure = instance_data.get("status", "") == "failed"
-
         # 企业微信通道
         if config.enabled and config.webhook_url:
             wecom_flags = _parse_flags(config.module_flags)
-            if _check_module_flag(wecom_flags, module_key, is_failure):
+            if _check_module_flag(wecom_flags, module_key):
                 await send_wecom_notification(db, config, instance_data, module_key)
             else:
                 logger.info(f"企微通知被 module_flags 过滤（module_key={module_key}）")
@@ -52,7 +50,7 @@ async def send_notification(
         # 邮件通道
         if config.email_enabled:
             email_flags = _parse_flags(config.email_module_flags)
-            if _check_module_flag(email_flags, module_key, is_failure):
+            if _check_module_flag(email_flags, module_key):
                 await send_email_notification(db, config, instance_data)
             else:
                 logger.info(f"邮件通知被 email_module_flags 过滤（module_key={module_key}）")

@@ -26,8 +26,6 @@ function parseFlags(raw: string | null): Record<string, boolean> {
 }
 
 function serializeFlags(flags: Record<string, boolean>): string {
-  const hasAny = Object.values(flags).some(Boolean)
-  if (!hasAny) return ''
   return JSON.stringify(flags)
 }
 
