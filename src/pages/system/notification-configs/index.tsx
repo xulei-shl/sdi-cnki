@@ -72,7 +72,7 @@ export default function AdminNotificationConfigsPage() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  {statusBadge(item.email_enabled, true)}
+                  {statusBadge(item.email_enabled, !!item.email_to)}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {item.email_to || (item.email_enabled ? <span className="text-xs text-muted-foreground">使用注册邮箱</span> : '-')}
