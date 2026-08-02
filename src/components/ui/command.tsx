@@ -9,7 +9,6 @@ import {
   CommandSeparator as CommandSeparatorPrimitive,
   CommandLoading as CommandLoadingPrimitive,
 } from 'cmdk'
-import { Check } from 'lucide-react'
 import * as React from 'react'
 
 const Command = React.forwardRef<

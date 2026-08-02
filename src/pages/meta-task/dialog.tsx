@@ -567,13 +567,13 @@ export function MetaTaskDialog({ open, onOpenChange, editTask, llmConfigs, promp
                                )
                              }}
                            >
-                             <Checkbox
-                               checked={checked}
-                               onCheckedChange={() => {
-                                 setDedupScopeMetaTaskIds(prev =>
-                                   checked ? prev.filter(x => x !== c.id) : [...prev, c.id]
-                                 )
-                               }}
+<Checkbox
+                                checked={checked}
+                                onChange={() => {
+                                  setDedupScopeMetaTaskIds(prev =>
+                                    checked ? prev.filter(x => x !== c.id) : [...prev, c.id]
+                                  )
+                                }}
                              />
                              <span className="truncate">{c.name}</span>
                              <span className="text-xs text-muted-foreground shrink-0">（{c.creator_name}）</span>

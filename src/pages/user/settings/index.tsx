@@ -6,7 +6,6 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { MessageSquare, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 import { getNotificationConfig, updateNotificationConfig, testNotificationWebhook, testEmailNotification } from '@/api/user-settings'
-import type { NotificationConfig } from '@/api/user-settings'
 
 interface StageDef {
   key: string
@@ -30,7 +29,6 @@ function serializeFlags(flags: Record<string, boolean>): string {
 }
 
 export default function UserSettingsPage() {
-  const [config, setConfig] = useState<NotificationConfig | null>(null)
   const [loading, setLoading] = useState(false)
   const [savingWechat, setSavingWechat] = useState(false)
   const [savingEmail, setSavingEmail] = useState(false)
@@ -51,7 +49,6 @@ export default function UserSettingsPage() {
     try {
       const res = await getNotificationConfig()
       const data = res.data
-      setConfig(data)
       setWebhookUrl(data.webhook_url ?? '')
       setWechatEnabled(data.enabled)
       setModuleFlags(parseFlags(data.module_flags))
@@ -68,12 +65,11 @@ export default function UserSettingsPage() {
   const handleSaveWechat = async () => {
     setSavingWechat(true)
     try {
-      const res = await updateNotificationConfig({
+      await updateNotificationConfig({
         webhook_url: webhookUrl.trim() || null,
         enabled: wechatEnabled,
         module_flags: serializeFlags(moduleFlags),
       })
-      setConfig(res.data)
       toast.success('企微通知保存成功')
     } catch { toast.error('保存失败') }
     finally { setSavingWechat(false) }
@@ -82,12 +78,11 @@ export default function UserSettingsPage() {
   const handleSaveEmail = async () => {
     setSavingEmail(true)
     try {
-      const res = await updateNotificationConfig({
+      await updateNotificationConfig({
         email_enabled: emailEnabled,
         email_to: emailTo.trim() || null,
         email_module_flags: serializeFlags(emailModuleFlags),
       })
-      setConfig(res.data)
       toast.success('邮件通知保存成功')
     } catch { toast.error('保存失败') }
     finally { setSavingEmail(false) }
@@ -121,11 +116,10 @@ export default function UserSettingsPage() {
   const handleSaveModules = async () => {
     setSavingModules(true)
     try {
-      const res = await updateNotificationConfig({
+      await updateNotificationConfig({
         module_flags: serializeFlags(moduleFlags),
         email_module_flags: serializeFlags(emailModuleFlags),
       })
-      setConfig(res.data)
       toast.success('模块通知配置保存成功')
     } catch { toast.error('保存失败') }
     finally { setSavingModules(false) }
