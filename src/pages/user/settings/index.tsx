@@ -193,7 +193,6 @@ export default function UserSettingsPage() {
               className="font-mono text-sm"
               type="email"
             />
-            <p className="text-xs text-muted-foreground">请填写收件邮箱</p>
           </div>
 
           <div className="flex items-center justify-between pt-1">
