@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Optional
 
 import httpx
@@ -12,23 +13,34 @@ from app.utils.logging import get_logger
 logger = get_logger("wecom_notifier")
 
 
-async def load_webhook_url(db: AsyncSession, user_id: int) -> Optional[str]:
-    """从 user_notification_configs 表读取指定用户的 Webhook URL。"""
+def _parse_flags(raw: str | None) -> dict[str, bool]:
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+def _check_module_flag(flags: dict[str, bool], module_key: str | None, is_failure: bool) -> bool:
+    if is_failure:
+        return True
+    if not module_key:
+        return True
+    if not flags:
+        return True
+    return flags.get(module_key, True)
+
+
+async def load_user_config(db: AsyncSession, user_id: int) -> UserNotificationConfig | None:
     result = await db.execute(
-        select(UserNotificationConfig).where(
-            UserNotificationConfig.user_id == user_id,
-            UserNotificationConfig.enabled == True,
-        )
+        select(UserNotificationConfig).where(UserNotificationConfig.user_id == user_id)
     )
-    config = result.scalar_one_or_none()
-    if config and config.webhook_url:
-        return config.webhook_url.strip()
-    return None
+    return result.scalar_one_or_none()
 
 
 async def _compute_detailed_stats(db: AsyncSession, instance_id: int) -> dict:
     """查询任务实例的详细统计数据。"""
-    import json
     from app.models.llm_analysis_result import LlmAnalysisResult
     from app.models.download_result import DownloadResult
     from app.models.task_result import TaskResult
@@ -150,24 +162,29 @@ def _build_markdown(instance_data: dict) -> str:
     return "\n".join(parts)
 
 
-async def send_notification(db: AsyncSession, instance_data: dict, user_id: int | None = None) -> None:
+async def send_wecom_notification(
+    db: AsyncSession,
+    config: UserNotificationConfig,
+    instance_data: dict,
+    module_key: str | None = None,
+) -> None:
     """向企业微信群发送任务通知。失败时不抛出异常，仅记录日志。
 
     Args:
         db: 数据库会话
+        config: 用户通知配置对象
         instance_data: 任务实例数据
-        user_id: 用户ID，用于查找该用户的 webhook 配置。为 None 时从 instance_data 中取。
+        module_key: 模块标识，用于检查 module_flags 开关
     """
     try:
-        if user_id is None:
-            user_id = instance_data.get("user_id")
-        if not user_id:
-            logger.info("未指定用户，跳过通知")
+        if not config.webhook_url:
+            logger.info("用户未配置 Webhook URL，跳过企微通知")
             return
 
-        webhook_url = await load_webhook_url(db, user_id)
-        if not webhook_url:
-            logger.info(f"用户 {user_id} 未配置 Webhook，跳过通知")
+        is_failure = instance_data.get("status", "") == "failed"
+        flags = _parse_flags(config.module_flags)
+        if not _check_module_flag(flags, module_key, is_failure):
+            logger.info(f"企微通知被 module_flags 过滤（module_key={module_key}, status={instance_data.get('status')}）")
             return
 
         instance_id = instance_data.get("instance_id")
@@ -178,7 +195,7 @@ async def send_notification(db: AsyncSession, instance_data: dict, user_id: int 
         payload = {"msgtype": "markdown", "markdown": {"content": markdown_content}}
 
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(webhook_url, json=payload)
+            resp = await client.post(config.webhook_url.strip(), json=payload)
             if resp.status_code != 200:
                 logger.error(f"企微通知发送失败: HTTP {resp.status_code} {resp.text}")
             else:

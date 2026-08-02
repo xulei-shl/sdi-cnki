@@ -98,6 +98,8 @@ async def _seed_default_configs(conn):
         ("llm_queue_concurrency", "5", "LLM 分析队列并发数"),
         ("download_queue_concurrency", "1", "PDF 下载队列并发数"),
         ("export_queue_concurrency", "1", "导出打包队列并发数"),
+        ("email_api_url", "http://localhost:9000", "邮件服务地址"),
+        ("email_api_key", "", "邮件服务 API Key，未配置则跳过所有邮件发送"),
     ]
     for key, value, description in defaults:
         await conn.execute(

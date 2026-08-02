@@ -9,6 +9,10 @@ export interface UserNotificationConfigItem {
   is_active: boolean
   webhook_url: string | null
   enabled: boolean
+  email_enabled: boolean
+  email_to: string | null
+  module_flags: string | null
+  email_module_flags: string | null
   updated_at: string | null
 }
 

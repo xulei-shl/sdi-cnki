@@ -249,7 +249,7 @@ async def run_cnki_search(
             },
         )
 
-        from app.services.wecom_notifier import send_notification
+        from app.services.notification import send_notification
         await send_notification(db, {
             "user_id": instance.creator.id if instance.creator else None,
             "instance_id": instance_id,
@@ -267,25 +267,7 @@ async def run_cnki_search(
                 "analyzed": 0,
                 "downloaded": 0,
             },
-        })
-        await send_notification(db, {
-            "user_id": instance.creator.id if instance.creator else None,
-            "instance_id": instance_id,
-            "stage": "检索",
-            "meta_task_name": instance.meta_task.name if instance.meta_task else "",
-            "username": instance.creator.username if instance.creator else "",
-            "instance_no": instance.instance_no,
-            "status": "search_completed",
-            "started_at": instance.started_at.isoformat() if instance.started_at else "",
-            "completed_at": timezone.now().isoformat(),
-            "stats": {
-                "total": instance.search_result_count or 0,
-                "valid": instance.valid_data_count or 0,
-                "duplicate": instance.duplicate_count or 0,
-                "analyzed": 0,
-                "downloaded": 0,
-            },
-        })
+        }, module_key="检索")
 
         # Auto-complete when no valid data (all duplicates / empty result)
         if not instance.valid_data_count:
@@ -332,7 +314,7 @@ async def run_cnki_search(
         instance.status = "failed"
         instance.error_message = str(e)[:500]
         await db.commit()
-        from app.services.wecom_notifier import send_notification
+        from app.services.notification import send_notification
         await send_notification(db, {
             "user_id": instance.creator.id if instance.creator else None,
             "stage": "检索",
@@ -344,5 +326,5 @@ async def run_cnki_search(
             "started_at": instance.started_at.isoformat() if instance.started_at else "",
             "completed_at": timezone.now().isoformat(),
             "stats": {},
-        })
+        }, module_key="检索")
         await svc.fail(item_id, str(e)[:500])

@@ -122,7 +122,7 @@ async def run_llm_analysis(
             "completed_at": timezone.now().isoformat(),
         })
 
-        from app.services.wecom_notifier import send_notification
+        from app.services.notification import send_notification
         await send_notification(db, {
             "user_id": instance.creator.id if instance.creator else None,
             "instance_id": instance_id,
@@ -140,7 +140,7 @@ async def run_llm_analysis(
                 "analyzed": analyzed,
                 "downloaded": 0,
             },
-        })
+        }, module_key="分析")
         logger.info(f"LLM analysis completed for instance {instance.instance_no}: {analyzed} ok, {failed} failed")
 
     except Exception as e:
@@ -153,7 +153,7 @@ async def run_llm_analysis(
             "status": "failed",
             "error_message": str(e)[:500],
         })
-        from app.services.wecom_notifier import send_notification
+        from app.services.notification import send_notification
         await send_notification(db, {
             "user_id": instance.creator.id if instance.creator else None,
             "instance_id": instance_id,
@@ -166,7 +166,7 @@ async def run_llm_analysis(
             "started_at": instance.started_at.isoformat() if instance.started_at else "",
             "completed_at": timezone.now().isoformat(),
             "stats": {},
-        })
+        }, module_key="分析")
 
 
 async def _load_llm_configs(db: AsyncSession, config_ids: list[int]) -> list[dict[str, Any]]:

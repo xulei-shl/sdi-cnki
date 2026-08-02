@@ -146,7 +146,7 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
             "status": "completed", "completed_at": timezone.now().isoformat(),
         })
 
-        from app.services.wecom_notifier import send_notification
+        from app.services.notification import send_notification
         await send_notification(db, {
             "user_id": instance.creator.id if instance.creator else None,
             "instance_id": instance_id,
@@ -164,7 +164,7 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
                 "analyzed": 0,
                 "downloaded": success,
             },
-        })
+        }, module_key="下载")
 
     except Exception as e:
         logger.error(f"Download failed: {e}", exc_info=True)
@@ -174,7 +174,7 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
         except Exception:
             pass
         try:
-            from app.services.wecom_notifier import send_notification
+            from app.services.notification import send_notification
             await send_notification(db, {
                 "user_id": instance.creator.id if instance.creator else None,
                 "stage": "下载",
@@ -186,7 +186,7 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
                 "started_at": instance.started_at.isoformat() if instance.started_at else "",
                 "completed_at": timezone.now().isoformat(),
                 "stats": {},
-            })
+            }, module_key="下载")
         except Exception:
             pass
         await svc.fail(item_id, str(e)[:500])

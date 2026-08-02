@@ -22,11 +22,11 @@ export default function AdminNotificationConfigsPage() {
 
   const formatDate = (d: string | null) => d?.slice(0, 16).replace('T', ' ') || '-'
 
-  const statusBadge = (item: UserNotificationConfigItem) => {
-    if (!item.webhook_url) {
+  const statusBadge = (enabled: boolean, hasConfig: boolean) => {
+    if (!hasConfig) {
       return <Badge variant="secondary">未配置</Badge>
     }
-    return item.enabled
+    return enabled
       ? <Badge className="bg-green-100 text-green-700 hover:bg-green-100">已启用</Badge>
       : <Badge variant="outline">已关闭</Badge>
   }
@@ -44,16 +44,17 @@ export default function AdminNotificationConfigsPage() {
               <TableHead>用户名</TableHead>
               <TableHead>邮箱</TableHead>
               <TableHead>角色</TableHead>
-              <TableHead>Webhook URL</TableHead>
-              <TableHead>状态</TableHead>
+              <TableHead>企业微信</TableHead>
+              <TableHead>邮件通知</TableHead>
+              <TableHead>接收邮箱</TableHead>
               <TableHead>最后更新</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
             ) : items.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">暂无数据</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">暂无数据</TableCell></TableRow>
             ) : items.map((item) => (
               <TableRow key={item.user_id}>
                 <TableCell>
@@ -65,12 +66,17 @@ export default function AdminNotificationConfigsPage() {
                     {item.role === 'admin' ? 'Admin' : 'User'}
                   </Badge>
                 </TableCell>
-                <TableCell className="max-w-[300px]">
-                  <div className="text-sm truncate font-mono" title={item.webhook_url || ''}>
-                    {item.webhook_url || '-'}
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    {statusBadge(item.enabled, !!item.webhook_url)}
                   </div>
                 </TableCell>
-                <TableCell>{statusBadge(item)}</TableCell>
+                <TableCell>
+                  {statusBadge(item.email_enabled, true)}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {item.email_to || (item.email_enabled ? <span className="text-xs text-muted-foreground">使用注册邮箱</span> : '-')}
+                </TableCell>
                 <TableCell className="text-sm text-muted-foreground">{formatDate(item.updated_at)}</TableCell>
               </TableRow>
             ))}

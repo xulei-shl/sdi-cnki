@@ -37,6 +37,10 @@ async def list_all_notification_configs(
             "is_active": user.is_active,
             "webhook_url": config.webhook_url if config else None,
             "enabled": config.enabled if config else False,
+            "email_enabled": config.email_enabled if config else False,
+            "email_to": config.email_to if config else None,
+            "module_flags": config.module_flags if config else None,
+            "email_module_flags": config.email_module_flags if config else None,
             "updated_at": config.updated_at.isoformat() if config and config.updated_at else None,
         })
 
