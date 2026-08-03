@@ -447,12 +447,6 @@ export default function TaskInstancePage() {
                 成功 {selectedInstance.download_success_count ?? 0}
                 <span className="text-muted-foreground"> / </span>
                 失败 {selectedInstance.download_failed_count ?? 0}
-                {selectedInstance.download_skipped_count ? (
-                  <>
-                    <span className="text-muted-foreground"> / </span>
-                    跳过 {selectedInstance.download_skipped_count}
-                  </>
-                ) : null}
               </DetailRow>
             </DetailSection>
 

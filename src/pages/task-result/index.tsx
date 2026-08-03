@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { AxiosError } from 'axios'
 import { toast } from 'sonner'
 import { getTaskInstance, importExcelResults } from '@/api/task-instances'
-import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis, downloadExportFile, retryDownload, invalidateTaskResultsCache } from '@/api/task-results'
+import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis, downloadExportFile, retryDownload, getDownloadProgress, invalidateTaskResultsCache } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { STEP_CONFIG } from './constants'
@@ -32,7 +32,7 @@ export default function TaskResultPage() {
 
   // SSE progress state
   const [analyzeProgress, setAnalyzeProgress] = useState({ active: false, analyzed: 0, total: 0, failed: 0 })
-  const [downloadProgress, setDownloadProgress] = useState({ active: false, success: 0, failed: 0, skipped: 0, total: 0 })
+  const [downloadProgress, setDownloadProgress] = useState({ active: false, success: 0, failed: 0, total: 0 })
 
   // Filters
   const [reviewStatus, setReviewStatus] = useState('')
@@ -106,7 +106,7 @@ export default function TaskResultPage() {
       }
     })
     sse.on('download.progress', (data: any) => {
-      setDownloadProgress({ active: true, success: data.success ?? 0, failed: data.failed ?? 0, skipped: data.skipped ?? 0, total: data.total ?? 0 })
+      setDownloadProgress({ active: true, success: data.success ?? 0, failed: data.failed ?? 0, total: data.total ?? 0 })
     })
     sse.on('task.completed', () => {
       setRetrying(false)
@@ -373,6 +373,22 @@ export default function TaskResultPage() {
   const isEditableStatus = ['analyzing_completed', 'downloading'].includes(instanceStatus)
   const isMoreMenuVisible = ['analyzing_completed', 'download_queued', 'downloading', 'completed', 'failed'].includes(instanceStatus)
   const canRetryAnalysis = ['analyzing_completed', 'downloading', 'completed', 'failed'].includes(instanceStatus)
+
+  // ── Download progress recovery ──
+  // 挂载/状态变化时从 DB 恢复累计进度（SSE 事件到达后继续覆盖更新），
+  // 解决“刷新页面后要等第一条 download.progress 事件才出现进度条”的问题。
+  useEffect(() => {
+    if (!['download_queued', 'downloading'].includes(instanceStatus)) return
+    let cancelled = false
+    getDownloadProgress(instanceId)
+      .then((res) => {
+        if (cancelled) return
+        const d = res.data || {}
+        setDownloadProgress({ active: true, success: d.success ?? 0, failed: d.failed ?? 0, total: d.total ?? 0 })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [instanceStatus, instanceId])
 
   return (
     <div className="h-full flex flex-col overflow-hidden">

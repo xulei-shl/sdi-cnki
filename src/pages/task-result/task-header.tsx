@@ -8,7 +8,7 @@ interface TaskHeaderProps {
   instance: TaskInstance | null
   stepIndex: number
   analyzeProgress: { active: boolean; analyzed: number; total: number; failed: number }
-  downloadProgress: { active: boolean; success: number; failed: number; skipped: number; total: number }
+  downloadProgress: { active: boolean; success: number; failed: number; total: number }
   onBack: () => void
 }
 
@@ -60,7 +60,7 @@ export function TaskHeader({ instance, stepIndex, analyzeProgress, downloadProgr
       {downloadProgress.active && (
         <div className="text-center text-xs text-amber-500 animate-pulse transition-all duration-300">
           <span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-2" />
-          下载进度: 成功 {downloadProgress.success} / 失败 {downloadProgress.failed} / 跳过 {downloadProgress.skipped} / 总计 {downloadProgress.total}
+          下载进度: 成功 {downloadProgress.success} / 失败 {downloadProgress.failed} / 总计 {downloadProgress.total}
         </div>
       )}
     </div>

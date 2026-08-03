@@ -17,6 +17,7 @@ from app.models.task_instance import TaskInstance
 from app.models.task_result import TaskResult
 from app.models.download_result import DownloadResult
 from app.services.pdf_downloader import download_pdf
+from app.services.download_progress import get_download_progress_stats
 from app.task_queue.crud import TaskQueueService
 from app.utils.logging import get_logger
 
@@ -58,7 +59,10 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
                 TaskResult.is_passed == True,
                 ~exists().where(
                     DownloadResult.task_result_id == TaskResult.id,
-                    DownloadResult.download_status == 'completed',
+                    # 仅下载“从未成功且未被标记失败”的记录：
+                    # completed 跳过（断点续传）；failed/skipped 也跳过，改由表格行级“下载”
+                    # 按钮单独重试，避免批量重跑先重试失败记录导致进度长时间无变化。
+                    DownloadResult.download_status.in_(('completed', 'failed', 'skipped')),
                 )
             )
         )
@@ -67,15 +71,27 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
         total = len(records)
 
         if not records:
-            # 有有效记录但均未人工审核通过时，不能“假完成”：
-            # 直接置 completed 会让用户以为下载成功，实际 0 个文件。
-            # 停留回 analyzing_completed（审核态），提示用户先在页面标记通过。
-            if (instance.valid_data_count or 0) > 0:
-                instance.status = "analyzing_completed"
-                instance.error_message = "无可下载记录：请先在页面完成人工审核（标记通过）后再触发下载"
-            else:
+            # 无待下载记录：不能“假完成”，按原因区分处理。
+            stats = await get_download_progress_stats(db, instance_id)
+            approved_cnt = stats["total"]
+            completed_cnt = stats["success"]
+            if (instance.valid_data_count or 0) == 0:
+                # 无有效数据 → 视为完成
                 instance.status = "completed"
                 instance.completed_at = timezone.now()
+            elif approved_cnt == 0:
+                # 有数据但均未人工审核通过：停留审核态，提示先标记通过
+                instance.status = "analyzing_completed"
+                instance.error_message = "无可下载记录：请先在页面完成人工审核（标记通过）后再触发下载"
+            elif completed_cnt >= approved_cnt:
+                # 审核通过的记录已全部下载成功 → 任务完成
+                instance.status = "completed"
+                instance.completed_at = timezone.now()
+                instance.error_message = None
+            else:
+                # 剩余记录均已标记下载失败：停留审核态，行级“下载”按钮可单独重试
+                instance.status = "analyzing_completed"
+                instance.error_message = "无可下载记录：剩余记录均已标记下载失败，可在表格行级点“下载”按钮单独重试"
             await db.commit()
             await svc.complete(item_id, '{"status": "completed", "downloaded": 0}')
             await broadcast_event(instance_id, "task.progress", {
@@ -90,7 +106,6 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
 
         success = 0
         failed = 0
-        skipped = 0
 
         def _download_one(rec: TaskResult) -> dict:
             """同步下载单条记录（在 to_thread 中执行）。"""
@@ -109,15 +124,15 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
                     }
                 return {
                     "id": rec.id,
-                    "status": "skipped",
+                    "status": "failed",
                     "error": "All 3 sources failed (zhesheke/wanfang/cnki)",
                 }
             except Exception as e:
-                return {"id": rec.id, "status": "skipped", "error": str(e)[:200]}
+                return {"id": rec.id, "status": "failed", "error": str(e)[:200]}
 
         # 分批下载：每批下载完成后立即写库并广播进度。
         # 好处：1) “下载中”期间有真实可见的进度；2) 进程崩溃时已下载记录已落库，
-        # 重新触发后通过 exists(completed) 自动跳过，实现断点续传。
+        # 重新触发后自动跳过已完成/已失败的记录，实现断点续传。
         for i in range(0, total, BATCH_DOWNLOAD_SIZE):
             batch = list(records[i:i + BATCH_DOWNLOAD_SIZE])
             dl_results = await asyncio.gather(
@@ -153,17 +168,18 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
                     tr_row = tr.scalar_one_or_none()
                     if tr_row:
                         tr_row.local_pdf_path = dlr.get("pdf_path", "")
-                elif dlr["status"] == "failed":
-                    failed += 1
                 else:
-                    skipped += 1
+                    failed += 1  # 下载未成功统一记为 failed（skipped 已合并）
 
             await db.commit()  # 每批落库
 
-            await broadcast_event(instance_id, "download.progress", {
-                "success": success, "failed": failed, "skipped": skipped, "total": total,
-            })
-            logger.info(f"Download progress {instance_no}: {success + failed + skipped}/{total}")
+            # 广播累计口径进度（与 /download-progress 接口一致，共用同一统计函数）：
+            # 不用本次运行的剩余数 total，避免重跑/续传场景刷新后总计跳变。
+            stats = await get_download_progress_stats(db, instance_id)
+            await broadcast_event(instance_id, "download.progress", stats)
+            logger.info(
+                f"Download progress {instance_no}: {stats['success'] + stats['failed']}/{stats['total']}"
+            )
 
         instance.status = "completed"
         instance.completed_at = timezone.now()
@@ -174,13 +190,10 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
             "status": "completed",
             "success": success,
             "failed": failed,
-            "skipped": skipped,
             "total": total,
         }, ensure_ascii=False))
 
-        await broadcast_event(instance_id, "download.progress", {
-            "success": success, "failed": failed, "skipped": skipped, "total": total,
-        })
+        await broadcast_event(instance_id, "download.progress", await get_download_progress_stats(db, instance_id))
         await broadcast_event(instance_id, "task.completed", {
             "status": "completed", "completed_at": timezone.now().isoformat(),
         })
@@ -217,7 +230,7 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
             # 用户可重新触发下载；已落库的记录会在重跑时自动跳过（断点续传）。
             if instance.status in ("downloading", "download_queued"):
                 instance.status = "analyzing_completed"
-            instance.error_message = f"下载失败：{str(e)[:200]}（已下载的记录将自动跳过，可重新触发）"
+            instance.error_message = f"下载失败：{str(e)[:200]}（已下载/已标记失败的记录将自动跳过，可重新触发）"
             await db.commit()
         except Exception:
             pass

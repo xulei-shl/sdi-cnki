@@ -89,7 +89,6 @@ export interface TaskInstance {
   manual_review_rejected_count?: number
   download_success_count?: number
   download_failed_count?: number
-  download_skipped_count?: number
   download_pending_count?: number
   error_message: string | null
   started_at: string | null
@@ -136,7 +135,7 @@ export interface TaskResult {
 }
 
 export type AnalysisStatus = 'pending' | 'analyzing' | 'completed' | 'failed'
-export type DownloadStatus = 'pending' | 'downloading' | 'completed' | 'failed' | 'skipped'
+export type DownloadStatus = 'pending' | 'downloading' | 'completed' | 'failed'
 
 export interface LlmConfig {
   id: number

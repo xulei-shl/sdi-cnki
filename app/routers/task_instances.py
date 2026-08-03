@@ -30,6 +30,7 @@ from app.utils.oplog import log_operation
 from app.routers import get_current_user_from_header
 from app.services.excel_parser import parse_excel_to_records
 from app.services.dedup_service import batch_check_and_mark
+from app.services.download_progress import get_download_progress_stats
 
 router = APIRouter()
 
@@ -252,7 +253,6 @@ async def get_task_instance(
 
     download_success = 0
     download_failed = 0
-    download_skipped = 0
     download_pending = 0
     for row in (
         await db.execute(
@@ -266,10 +266,9 @@ async def get_task_instance(
     ).all():
         if row[0] == "completed":
             download_success = row[1]
-        elif row[0] == "failed":
-            download_failed = row[1]
-        elif row[0] == "skipped":
-            download_skipped = row[1]
+        elif row[0] in ("failed", "skipped"):
+            # skipped 已合并进 failed（下载状态精简），保留对旧数据的兼容
+            download_failed += row[1]
         elif row[0] == "pending":
             download_pending = row[1]
 
@@ -302,7 +301,6 @@ async def get_task_instance(
         "manual_review_rejected_count": manual_rejected,
         "download_success_count": download_success,
         "download_failed_count": download_failed,
-        "download_skipped_count": download_skipped,
         "download_pending_count": download_pending,
     }
 
@@ -599,6 +597,28 @@ async def start_download(
     from app.routers.sse import broadcast_event
     await broadcast_event(instance_id, "task.progress", {"status": "download_queued"})
     return {"message": "Download queued"}
+
+
+@router.get("/{instance_id}/download-progress")
+async def get_download_progress(
+    instance_id: int,
+    current_user = Depends(get_current_user_from_header),
+    db: AsyncSession = Depends(get_db),
+):
+    """下载进度（累计口径，实例视角，跨运行累计）。
+
+    与 download_worker 广播的 download.progress 事件同口径（共用
+    app.services.download_progress.get_download_progress_stats）。
+    """
+    stmt = select(TaskInstance).where(TaskInstance.id == instance_id)
+    result = await db.execute(stmt)
+    inst = result.scalar_one_or_none()
+    if not inst:
+        raise NotFoundError("TaskInstance", instance_id)
+    if current_user.role != "admin" and inst.creator_id != current_user.id:
+        raise PermissionDeniedError()
+
+    return await get_download_progress_stats(db, instance_id)
 
 
 @router.post("/{instance_id}/results/{result_id}/retry-download")

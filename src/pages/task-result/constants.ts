@@ -16,7 +16,8 @@ export const DOWNLOAD_BADGE: Record<string, { label: string; variant: 'success' 
   downloading: { label: '下载中', variant: 'info' },
   completed: { label: '已完成', variant: 'success' },
   failed: { label: '失败', variant: 'destructive' },
-  skipped: { label: '跳过', variant: 'warning' },
+  // 旧数据兼容：alembic 008 迁移前存量行可能仍为 skipped，统一展示为“失败”防止崩溃
+  skipped: { label: '失败', variant: 'destructive' },
 }
 
 export const ANALYSIS_FILTER_OPTIONS = [
@@ -45,7 +46,6 @@ export const DOWNLOAD_STATUS_OPTIONS = [
   { label: '下载中', value: 'downloading' },
   { label: '已完成', value: 'completed' },
   { label: '失败', value: 'failed' },
-  { label: '跳过', value: 'skipped' },
 ]
 
 export const SCORE_OPTIONS = [
@@ -77,7 +77,6 @@ export function downloadTextColor(status?: string): string {
   if (status === 'completed') return 'text-green-600'
   if (status === 'failed') return 'text-red-500'
   if (status === 'downloading') return 'text-blue-500'
-  if (status === 'skipped') return 'text-yellow-600'
   return 'text-muted-foreground'
 }
 

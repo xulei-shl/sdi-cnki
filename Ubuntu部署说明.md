@@ -72,6 +72,103 @@ systemctl status sdi-cnki-backend sdi-cnki-frontend --no-pager
 | C：后端 + DB 变更 | ✅ | ✅ | 按需 | ✅ | 按需 |
 | D：全量更新 | ✅ | ✅ | ✅ | ✅ | ✅ |
 
+### 重启与运行中任务恢复（重要）
+
+> 后端 4 个 worker（cnki/llm/download/export）与 uvicorn **同进程**运行（`auto_start_workers`）。
+> 任何后端重启都会**中断正在执行的任务**：队列行停留在 `running`、任务实例停留在
+> `downloading`/`analyzing`。新启动的 worker 只拾取 `pending`/`retrying` 的任务，**不会自动接管**
+> 残留行——需等超时回收（下载默认 6 小时，`DOWNLOAD_TIMEOUT_SEC`）才会被标记失败并回退实例。
+> 因此**重启前请先检查是否有任务在运行**，重启后按需恢复。
+
+**1. 重启前检查**
+
+```bash
+cd /opt/sdi-cnki
+python3 -c "
+import sqlite3
+conn = sqlite3.connect('file:data/cnki_service.db?mode=ro', uri=True)
+print('运行中的任务:', conn.execute(\"SELECT id, task_key, started_at FROM task_queue WHERE status='running'\").fetchall())
+print('下载中的实例:', conn.execute(\"SELECT id, instance_no, status FROM task_instances WHERE status IN ('downloading','download_queued')\").fetchall())
+conn.close()
+"
+```
+
+有运行中任务时：能等则**等任务完成后再重启**；必须立即重启时数据也安全（每批已落库），
+重启后按第 3 步恢复即可。
+
+**2. 重启**
+
+按上方场景 A/B/C/D 执行 `systemctl restart sdi-cnki-backend`（及对应前端步骤）。
+
+**3. 重启后恢复被中断的任务**
+
+以下以下载任务为例（其他队列同理，替换 `download_` 前缀）。先查出残留的队列行 id：
+
+```bash
+cd /opt/sdi-cnki
+python3 -c "
+import sqlite3
+conn = sqlite3.connect('file:data/cnki_service.db?mode=ro', uri=True)
+print(conn.execute(\"SELECT id, status, task_key FROM task_queue WHERE status='running'\").fetchall())
+conn.close()
+"
+```
+
+- **方式一：自动续跑（推荐）**——把残留 `running` 行重置为 `pending`，worker 会在下一个轮询
+  周期（≤5 秒）自动拾取并**断点续传**恢复：
+
+```bash
+cd /opt/sdi-cnki
+python3 -c "
+import asyncio
+from app.database import async_session_factory
+from app.task_queue.crud import TaskQueueService
+async def main():
+    async with async_session_factory() as db:
+        await TaskQueueService(db).retry_failed(<队列行 id>)
+        print('已重置为 pending，worker 将自动续跑')
+asyncio.run(main())
+"
+```
+
+  > 断点续传语义：已下载成功（`completed`）的记录自动跳过；已标记失败（`failed`）的记录
+  > **不会由批量任务重试**（避免重跑先卡在失败记录上），可在结果页表格行级点“下载”按钮单独重试。
+
+- **方式二：手动重新触发**——把残留行标记失败并回退实例到审核态，由用户在页面重新点“下载”：
+
+```bash
+cd /opt/sdi-cnki
+python3 -c "
+import asyncio
+from sqlalchemy import select
+from app.database import async_session_factory
+from app.models.task_queue import TaskQueueItem
+from app.models.task_instance import TaskInstance
+async def main():
+    async with async_session_factory() as db:
+        row = (await db.execute(select(TaskQueueItem).where(TaskQueueItem.id == <队列行 id>))).scalar_one()
+        row.status = 'failed'
+        row.error_message = '手动恢复：服务重启中断，请重新触发'
+        inst_no = (row.task_key or '').removeprefix('download_')
+        inst = (await db.execute(select(TaskInstance).where(TaskInstance.instance_no == inst_no))).scalar_one_or_none()
+        if inst and inst.status in ('downloading', 'download_queued'):
+            inst.status = 'analyzing_completed'
+        await db.commit()
+        print('已恢复为可重新触发状态')
+asyncio.run(main())
+"
+```
+
+**4. 恢复后验证**
+
+```bash
+curl -s http://localhost:8456/api/v1/health     # 预期 {"status":"ok"}
+journalctl -u sdi-cnki-backend -n 30 --no-pager | grep 'Download progress'   # 续跑后有进度事件
+```
+
+> 提示：结果页“下载进度”条刷新后会自动从数据库恢复真实累计进度（成功/失败/总计），
+> 无需等待第一条 SSE 事件；中断期间已下载的记录不会重复下载。
+
 ## 前置检查
 
 ```bash
