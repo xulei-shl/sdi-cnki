@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -11,7 +12,7 @@ settings = get_settings()
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import delete, select, func, desc, or_, text, update
+from sqlalchemy import select, func, desc, or_, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -34,6 +35,13 @@ router = APIRouter()
 
 # 实例级下载串行锁，同一实例内的单条重试下载逐条执行
 _instance_dl_locks: dict[int, asyncio.Lock] = {}
+
+# 批量下载数百篇 PDF 可能耗时数小时：超时阈值放宽，防止超时回收器误判
+DOWNLOAD_TIMEOUT_SEC = 21600
+# 检索（最大导出 500 条）也可能耗时较长：放宽至 1.5 小时
+CNKI_TIMEOUT_SEC = 5400
+# 重新分析（最多 2000 条）放宽至 2 小时
+LLM_RETRY_TIMEOUT_SEC = 7200
 
 
 async def _allocate_instance_no(db: AsyncSession) -> str:
@@ -315,11 +323,14 @@ async def _cleanup_instance_side_effects(db: AsyncSession, inst: TaskInstance) -
     from app.services.pdf_cleanup import decrement_pdf_refs_for_instance
     await decrement_pdf_refs_for_instance(db, inst.id)
 
-    # 取消队列中关联的待处理/运行中任务
+    # 取消队列中关联的待处理/运行中任务（含导出任务：key 形如 export_{instance_no}_{export_id}）
     keys = [inst.instance_no, f"llm_{inst.instance_no}", f"download_{inst.instance_no}", f"llm_retry_{inst.instance_no}"]
     await db.execute(
         update(TaskQueueItem)
-        .where(TaskQueueItem.task_key.in_(keys))
+        .where(or_(
+            TaskQueueItem.task_key.in_(keys),
+            TaskQueueItem.task_key.like(f"export_{inst.instance_no}_%"),
+        ))
         .where(TaskQueueItem.status.in_(["pending", "running", "retrying"]))
         .values(status="cancelled")
     )
@@ -561,11 +572,25 @@ async def start_download(
     inst.status = "download_queued"
     from app.task_queue.crud import TaskQueueService
     svc = TaskQueueService(db)
+    # 防重复触发：若同实例已存在正在运行的下载任务（尚未被超时回收），拒绝重复入队，
+    # 避免删除运行中的行导致旧任务孤儿化、重复拉取外部站点。
+    running_dl = await db.execute(
+        select(TaskQueueItem).where(
+            TaskQueueItem.task_key == f"download_{inst.instance_no}",
+            TaskQueueItem.status == "running",
+        )
+    )
+    if running_dl.scalar_one_or_none():
+        raise ValidationError("该实例的下载任务仍在运行中，请勿重复触发")
+    # replace=True：先删除同实例旧下载队列行（含卡死/已完成的旧行），避免唯一键冲突 500；
+    # timeout_sec 放宽至 6 小时：批量下载数百篇 PDF 可能耗时数小时，防止超时回收器误判。
     await svc.enqueue(
         queue_type="download",
         task_type="pdf_download",
         params_json=json.dumps({"instance_id": instance_id, "instance_no": inst.instance_no}),
         task_key=f"download_{inst.instance_no}",
+        timeout_sec=DOWNLOAD_TIMEOUT_SEC,
+        replace=True,
     )
     await db.commit()
     from app.routers.sse import broadcast_event
@@ -694,18 +719,14 @@ async def retry_llm_analysis(
 
     from app.task_queue.crud import TaskQueueService
     svc = TaskQueueService(db)
-    await db.execute(
-        delete(TaskQueueItem).where(
-            TaskQueueItem.task_key == f"llm_retry_{inst.instance_no}",
-            TaskQueueItem.status.in_(["pending", "completed", "failed", "retrying"]),
-        )
-    )
     await svc.enqueue(
         queue_type="llm",
         task_type="llm_analysis",
         params_json=json.dumps({"instance_id": instance_id, "instance_no": inst.instance_no, "retry_failed_only": True}),
         task_key=f"llm_retry_{inst.instance_no}",
         commit=False,
+        replace=True,
+        timeout_sec=LLM_RETRY_TIMEOUT_SEC,
     )
     inst.status = "analyzing"
     await db.commit()
@@ -731,18 +752,14 @@ async def run_task_instance(
         raise ValidationError(f"Cannot run instance with status: {inst.status}")
     from app.task_queue.crud import TaskQueueService
     svc = TaskQueueService(db)
-    await db.execute(
-        delete(TaskQueueItem).where(
-            TaskQueueItem.task_key == inst.instance_no,
-            TaskQueueItem.status.in_(["pending", "completed", "failed", "retrying"]),
-        )
-    )
     await svc.enqueue(
         queue_type="cnki",
         task_type="cnki_search",
         params_json=json.dumps({"instance_id": instance_id, "instance_no": inst.instance_no}),
         task_key=inst.instance_no,
         commit=False,
+        replace=True,
+        timeout_sec=CNKI_TIMEOUT_SEC,
     )
     inst.status = "search_queued"
     await db.commit()
@@ -893,6 +910,7 @@ async def import_excel_results(
             params_json=json.dumps({"instance_id": instance_id, "instance_no": instance_no}),
             task_key=f"llm_{instance_no}",
             timeout_sec=3600,
+            replace=True,
         )
     elif valid == 0:
         inst.status = "completed"

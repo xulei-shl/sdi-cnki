@@ -13,6 +13,7 @@ from app.models.export_task import ExportTask
 from app.models.task_instance import TaskInstance
 from app.services.export_service import create_export_package
 from app.routers.sse import broadcast_event
+from app.task_queue.crud import TaskQueueService
 from app.utils.logging import get_logger
 
 logger = get_logger("export_worker")
@@ -22,6 +23,7 @@ settings = get_settings()
 
 async def run_export(db: AsyncSession, task_item_id: int, params_json: str) -> None:
     """执行导出任务：打包 ZIP -> 更新状态 -> SSE 通知。"""
+    svc = TaskQueueService(db)
     params = json.loads(params_json)
     export_id = params.get("export_id")
     instance_id = params.get("instance_id")
@@ -52,6 +54,15 @@ async def run_export(db: AsyncSession, task_item_id: int, params_json: str) -> N
         export_task.expires_at = timezone.now() + timedelta(hours=expiry_hours)
         export_task.completed_at = timezone.now()
         await db.commit()
+
+        # 关键：任务队列行必须显式 complete，否则 task_queue 永远停留在 running
+        # （此前导出成功但队列行残留的根因）。失败分支保持 raise，由 Worker 兜底 svc.fail。
+        await svc.complete(task_item_id, json.dumps({
+            "export_id": export_id,
+            "file_path": zip_path,
+            "file_size": file_size,
+            "status": "completed",
+        }, ensure_ascii=False))
 
         await broadcast_event(
             instance_id,

@@ -266,6 +266,7 @@ async def run_cnki_search(
                 params_json=json.dumps({"instance_id": instance_id, "instance_no": instance.instance_no}),
                 task_key=f"llm_{instance.instance_no}",
                 timeout_sec=3600,
+                replace=True,
             )
             logger.info(f"Auto-enqueued LLM analysis for instance {instance.instance_no} ({instance.valid_data_count} articles)")
     except NoResultsError:

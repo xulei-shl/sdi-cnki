@@ -530,6 +530,7 @@ async def execute_meta_task(
             params_json=json.dumps({"instance_id": instance.id, "instance_no": instance.instance_no}),
             task_key=instance.instance_no,
             commit=False,
+            timeout_sec=5400,
         )
         instance.status = "search_queued"
         await db.commit()

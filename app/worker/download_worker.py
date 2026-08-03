@@ -60,10 +60,23 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
         records = rec_result.scalars().all()
 
         if not records:
-            instance.status = "completed"
-            instance.completed_at = timezone.now()
+            # 有有效记录但均未人工审核通过时，不能“假完成”：
+            # 直接置 completed 会让用户以为下载成功，实际 0 个文件。
+            # 停留回 analyzing_completed（审核态），提示用户先在页面标记通过。
+            if (instance.valid_data_count or 0) > 0:
+                instance.status = "analyzing_completed"
+                instance.error_message = "无可下载记录：请先在页面完成人工审核（标记通过）后再触发下载"
+            else:
+                instance.status = "completed"
+                instance.completed_at = timezone.now()
             await db.commit()
             await svc.complete(item_id, '{"status": "completed", "downloaded": 0}')
+            from app.routers.sse import broadcast_event
+            await broadcast_event(instance_id, "task.progress", {
+                "status": instance.status,
+                "downloaded": 0,
+                "message": instance.error_message or "",
+            })
             return
 
         output_dir = Path(settings.downloads_dir) / instance_no
@@ -105,15 +118,28 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
         )
 
         for dlr in dl_results:
-            dr = DownloadResult(
-                task_result_id=dlr["id"],
-                task_instance_id=instance_id,
-                pdf_path=dlr.get("pdf_path", ""),
-                file_size=dlr.get("file_size", 0),
-                download_status=dlr["status"],
-                error_message=dlr.get("error", ""),
+            # 更新或插入：task_result_id 是唯一约束，若该记录此前已有失败记录，
+            # 直接 INSERT 会撞唯一键导致整个下载任务异常卡死。
+            existing_dr = await db.execute(
+                select(DownloadResult).where(DownloadResult.task_result_id == dlr["id"])
             )
-            db.add(dr)
+            dr = existing_dr.scalar_one_or_none()
+            if dr is None:
+                dr = DownloadResult(
+                    task_result_id=dlr["id"],
+                    task_instance_id=instance_id,
+                    pdf_path=dlr.get("pdf_path", ""),
+                    file_size=dlr.get("file_size", 0),
+                    download_status=dlr["status"],
+                    error_message=dlr.get("error", ""),
+                )
+                db.add(dr)
+            else:
+                dr.task_instance_id = instance_id
+                dr.download_status = dlr["status"]
+                dr.pdf_path = dlr.get("pdf_path", "")
+                dr.file_size = dlr.get("file_size", 0)
+                dr.error_message = dlr.get("error", "")
             if dlr["status"] == "completed":
                 success += 1
                 tr = await db.execute(select(TaskResult).where(TaskResult.id == dlr["id"]))
@@ -187,6 +213,11 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
                 "completed_at": timezone.now().isoformat(),
                 "stats": {},
             }, module_key="下载")
+        except Exception:
+            pass
+        try:
+            # 异常可能已破坏当前事务，先回滚再标记失败，确保队列行可靠落库
+            await db.rollback()
         except Exception:
             pass
         await svc.fail(item_id, str(e)[:500])
