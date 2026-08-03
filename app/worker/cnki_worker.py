@@ -6,8 +6,6 @@ import asyncio
 import json
 from pathlib import Path
 
-import pandas as pd
-
 from app.utils import timezone
 from typing import Any
 
@@ -20,7 +18,6 @@ from app.models.meta_task import MetaTask
 from app.models.task_instance import TaskInstance
 from app.models.task_result import TaskResult
 from app.services.cnki.browser import CnkiBrowser
-from app.services.cnki.interactor import CnkiInteractor
 from app.services.cnki.professional_interactor import ProfessionalCnkiInteractor
 from app.services.cnki.exceptions import NoResultsError, CnkiSearchError
 from app.services.excel_parser import parse_excel_to_records, CNKI_COLUMN_MAP
@@ -46,6 +43,30 @@ def _extract_queries(params: dict) -> list[str]:
     return []
 
 
+def build_professional_search_params(params: dict) -> dict | None:
+    """Normalize any search params to a single professional (专业检索) execution.
+
+    Basic mode merges all keywords into one expression as group A
+    (SU=(k1 + k2 + ...) OR TKA=(k1 + k2 + ...)), executed in a single search so
+    the export limit (max_export) is strictly respected. Returns None when there
+    are no keywords (the search should be skipped). Professional-mode params are
+    returned unchanged.
+    """
+    pro_params = dict(params)
+    if pro_params.get("search_mode") == "professional":
+        return pro_params
+
+    queries = _extract_queries(pro_params)
+    if not queries:
+        return None
+    pro_params["search_mode"] = "professional"
+    pro_params["query_group_a"] = queries
+    pro_params["query_group_b"] = []
+    pro_params.pop("queries", None)
+    pro_params.pop("query", None)
+    return pro_params
+
+
 def _run_search_sync(
     params: dict,
     instance_no: str,
@@ -53,66 +74,24 @@ def _run_search_sync(
 ) -> dict:
     """Run search in a single browser session.
 
-    If search_mode == 'professional' uses ProfessionalCnkiInteractor (single search).
-    Otherwise uses CnkiInteractor per-keyword loop with merge.
+    Both modes execute exactly ONE professional (专业检索) search so the export
+    limit (max_export) is strictly respected:
+      - professional mode: user-defined groups A/B (+ author/fund filters)
+      - basic mode: all keywords are merged into one expression as group A,
+        i.e. SU=(k1 + k2 + ...) OR TKA=(k1 + k2 + ...)
     """
     base_dir = Path(uploads_dir) / instance_no
     base_dir.mkdir(parents=True, exist_ok=True)
 
-    if params.get("search_mode") == "professional":
-        with CnkiBrowser(headless=True) as browser:
-            browser.goto(CnkiBrowser.HOME_URL)
-            interactor = ProfessionalCnkiInteractor(browser, base_dir)
-            result = interactor.execute_search(params)
-        return result
-
-    queries = _extract_queries(params)
-    if not queries:
+    pro_params = build_professional_search_params(params)
+    if pro_params is None:
         return {"final_file": None, "total": 0, "exported": 0, "batches": [], "no_results": True}
-
-    query_results: list[dict] = []
-    total_all = 0
-    exported_all = 0
 
     with CnkiBrowser(headless=True) as browser:
         browser.goto(CnkiBrowser.HOME_URL)
-        for i, q in enumerate(queries):
-            q_dir = base_dir / f"q{i}"
-            q_dir.mkdir(parents=True, exist_ok=True)
-            try:
-                interactor = CnkiInteractor(browser, q_dir)
-                result = interactor.execute_search({**params, "query": q})
-                if result.get("final_file"):
-                    query_results.append(result)
-                    total_all += result.get("total", 0)
-                    exported_all += result.get("exported", 0)
-            except NoResultsError:
-                continue
-
-    if not query_results:
-        return {"final_file": None, "total": 0, "exported": 0, "batches": [], "no_results": True}
-
-    if len(query_results) == 1:
-        return query_results[0]
-
-    frames = []
-    for qr in query_results:
-        fp = qr.get("final_file")
-        if fp and Path(fp).exists():
-            frames.append(pd.read_excel(fp, engine="openpyxl").fillna(""))
-
-    if not frames:
-        return {"final_file": None, "total": 0, "exported": 0, "batches": [], "no_results": True}
-
-    merged_path = base_dir / f"{instance_no}_merged.xlsx"
-    pd.concat(frames, ignore_index=True).to_excel(merged_path, index=False, engine="openpyxl")
-
-    return {
-        "final_file": str(merged_path),
-        "total": total_all,
-        "exported": exported_all,
-        "batches": query_results,
-    }
+        interactor = ProfessionalCnkiInteractor(browser, base_dir)
+        result = interactor.execute_search(pro_params)
+    return result
 
 
 async def process_search_results(
