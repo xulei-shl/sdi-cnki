@@ -33,8 +33,11 @@ from app.services.dedup_service import batch_check_and_mark
 
 router = APIRouter()
 
-# 实例级下载串行锁，同一实例内的单条重试下载逐条执行
-_instance_dl_locks: dict[int, asyncio.Lock] = {}
+# 单条下载全局串行锁：所有用户的逐条下载（跨实例）按 FIFO 排队串行执行，
+# 避免多用户同时逐条下载产生大量并发浏览器会话打爆外部站点（zhesheke/万方/CNKI）。
+# 注意：asyncio.Lock 是进程内同步原语（uvicorn 单进程有效）；若未来多进程部署，
+# 需改为跨进程机制（如数据库行锁/信号量）。
+_single_dl_lock = asyncio.Lock()
 
 # 批量下载数百篇 PDF 可能耗时数小时：超时阈值放宽，防止超时回收器误判
 DOWNLOAD_TIMEOUT_SEC = 21600
@@ -572,17 +575,17 @@ async def start_download(
     inst.status = "download_queued"
     from app.task_queue.crud import TaskQueueService
     svc = TaskQueueService(db)
-    # 防重复触发：若同实例已存在正在运行的下载任务（尚未被超时回收），拒绝重复入队，
-    # 避免删除运行中的行导致旧任务孤儿化、重复拉取外部站点。
-    running_dl = await db.execute(
-        select(TaskQueueItem).where(
-            TaskQueueItem.task_key == f"download_{inst.instance_no}",
-            TaskQueueItem.status == "running",
-        )
+    # 防重复触发：同实例已存在未完成的下载任务（排队/重试/执行中）时拒绝，
+    # 杜绝“删掉在途任务再排队”导致的状态混乱与重复下载。
+    existing = await db.execute(
+        select(TaskQueueItem).where(TaskQueueItem.task_key == f"download_{inst.instance_no}")
     )
-    if running_dl.scalar_one_or_none():
-        raise ValidationError("该实例的下载任务仍在运行中，请勿重复触发")
-    # replace=True：先删除同实例旧下载队列行（含卡死/已完成的旧行），避免唯一键冲突 500；
+    dl_row = existing.scalar_one_or_none()
+    if dl_row and dl_row.status in ("pending", "retrying"):
+        raise ValidationError("该实例已有下载任务排队/重试中，请勿重复触发")
+    if dl_row and dl_row.status == "running":
+        raise ValidationError("该实例下载正在进行中，请勿重复触发")
+    # 其余情况（无行或旧行为终态 completed/failed/cancelled）→ replace 入队；
     # timeout_sec 放宽至 6 小时：批量下载数百篇 PDF 可能耗时数小时，防止超时回收器误判。
     await svc.enqueue(
         queue_type="download",
@@ -636,11 +639,9 @@ async def retry_single_download(
 
     _log = _get_logger("retry_download")
 
-    # 同一实例内的单条下载串行执行，避免多个浏览器同时跑
-    if instance_id not in _instance_dl_locks:
-        _instance_dl_locks[instance_id] = asyncio.Lock()
-
-    async with _instance_dl_locks[instance_id]:
+    # 全局串行：所有用户的逐条下载按 FIFO 排队，一次只跑一个浏览器会话。
+    # （队列式批量下载已在 Worker 侧串行，这里只覆盖“逐条点击”的直连下载通道。）
+    async with _single_dl_lock:
         try:
             pdf_path = await asyncio.to_thread(
                 download_pdf,

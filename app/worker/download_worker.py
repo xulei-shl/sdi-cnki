@@ -23,6 +23,10 @@ from app.utils.logging import get_logger
 logger = get_logger("download_worker")
 settings = get_settings()
 
+# 每批下载条数：=1 即严格串行（与历史行为一致，外部站点压力最小），
+# 同时保持每批落库 + SSE 进度 + 崩溃续传。如需提速可上调（外部站点压力随之增加）。
+BATCH_DOWNLOAD_SIZE = 1
+
 
 async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None:
     svc = TaskQueueService(db)
@@ -43,6 +47,8 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
     instance.download_started_at = timezone.now()
     await db.commit()
 
+    from app.routers.sse import broadcast_event
+
     try:
         rec_stmt = (
             select(TaskResult)
@@ -58,6 +64,7 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
         )
         rec_result = await db.execute(rec_stmt)
         records = rec_result.scalars().all()
+        total = len(records)
 
         if not records:
             # 有有效记录但均未人工审核通过时，不能“假完成”：
@@ -71,7 +78,6 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
                 instance.completed_at = timezone.now()
             await db.commit()
             await svc.complete(item_id, '{"status": "completed", "downloaded": 0}')
-            from app.routers.sse import broadcast_event
             await broadcast_event(instance_id, "task.progress", {
                 "status": instance.status,
                 "downloaded": 0,
@@ -86,74 +92,82 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
         failed = 0
         skipped = 0
 
-        def _process_sync(rec_list: list, out_dir: Path) -> list[dict]:
-            results = []
-            for rec in rec_list:
-                try:
-                    pdf_path = download_pdf(
-                        article_title=rec.title,
-                        output_dir=out_dir,
-                    )
-                    if pdf_path:
-                        size = Path(pdf_path).stat().st_size
-                        results.append({
-                            "id": rec.id,
-                            "status": "completed",
-                            "pdf_path": str(pdf_path),
-                            "file_size": size,
-                        })
-                    else:
-                        results.append({
-                            "id": rec.id,
-                            "status": "skipped",
-                            "error": "All 3 sources failed (zhesheke/wanfang/cnki)",
-                        })
-                except Exception as e:
-                    results.append({"id": rec.id, "status": "skipped", "error": str(e)[:200]})
-            return results
-
-        loop = asyncio.get_event_loop()
-        dl_results = await loop.run_in_executor(
-            None, _process_sync, list(records), output_dir,
-        )
-
-        for dlr in dl_results:
-            # 更新或插入：task_result_id 是唯一约束，若该记录此前已有失败记录，
-            # 直接 INSERT 会撞唯一键导致整个下载任务异常卡死。
-            existing_dr = await db.execute(
-                select(DownloadResult).where(DownloadResult.task_result_id == dlr["id"])
-            )
-            dr = existing_dr.scalar_one_or_none()
-            if dr is None:
-                dr = DownloadResult(
-                    task_result_id=dlr["id"],
-                    task_instance_id=instance_id,
-                    pdf_path=dlr.get("pdf_path", ""),
-                    file_size=dlr.get("file_size", 0),
-                    download_status=dlr["status"],
-                    error_message=dlr.get("error", ""),
+        def _download_one(rec: TaskResult) -> dict:
+            """同步下载单条记录（在 to_thread 中执行）。"""
+            try:
+                pdf_path = download_pdf(
+                    article_title=rec.title,
+                    output_dir=output_dir,
                 )
-                db.add(dr)
-            else:
-                dr.task_instance_id = instance_id
-                dr.download_status = dlr["status"]
-                dr.pdf_path = dlr.get("pdf_path", "")
-                dr.file_size = dlr.get("file_size", 0)
-                dr.error_message = dlr.get("error", "")
-            if dlr["status"] == "completed":
-                success += 1
-                tr = await db.execute(select(TaskResult).where(TaskResult.id == dlr["id"]))
-                tr_row = tr.scalar_one_or_none()
-                if tr_row:
-                    tr_row.local_pdf_path = dlr.get("pdf_path", "")
-            elif dlr["status"] == "failed":
-                failed += 1
-            else:
-                skipped += 1
-            await db.flush()
+                if pdf_path:
+                    size = Path(pdf_path).stat().st_size
+                    return {
+                        "id": rec.id,
+                        "status": "completed",
+                        "pdf_path": str(pdf_path),
+                        "file_size": size,
+                    }
+                return {
+                    "id": rec.id,
+                    "status": "skipped",
+                    "error": "All 3 sources failed (zhesheke/wanfang/cnki)",
+                }
+            except Exception as e:
+                return {"id": rec.id, "status": "skipped", "error": str(e)[:200]}
+
+        # 分批下载：每批下载完成后立即写库并广播进度。
+        # 好处：1) “下载中”期间有真实可见的进度；2) 进程崩溃时已下载记录已落库，
+        # 重新触发后通过 exists(completed) 自动跳过，实现断点续传。
+        for i in range(0, total, BATCH_DOWNLOAD_SIZE):
+            batch = list(records[i:i + BATCH_DOWNLOAD_SIZE])
+            dl_results = await asyncio.gather(
+                *[asyncio.to_thread(_download_one, rec) for rec in batch]
+            )
+
+            for dlr in dl_results:
+                # 更新或插入：task_result_id 是唯一约束，若该记录此前已有失败记录，
+                # 直接 INSERT 会撞唯一键导致整个下载任务异常卡死。
+                existing_dr = await db.execute(
+                    select(DownloadResult).where(DownloadResult.task_result_id == dlr["id"])
+                )
+                dr = existing_dr.scalar_one_or_none()
+                if dr is None:
+                    dr = DownloadResult(
+                        task_result_id=dlr["id"],
+                        task_instance_id=instance_id,
+                        pdf_path=dlr.get("pdf_path", ""),
+                        file_size=dlr.get("file_size", 0),
+                        download_status=dlr["status"],
+                        error_message=dlr.get("error", ""),
+                    )
+                    db.add(dr)
+                else:
+                    dr.task_instance_id = instance_id
+                    dr.download_status = dlr["status"]
+                    dr.pdf_path = dlr.get("pdf_path", "")
+                    dr.file_size = dlr.get("file_size", 0)
+                    dr.error_message = dlr.get("error", "")
+                if dlr["status"] == "completed":
+                    success += 1
+                    tr = await db.execute(select(TaskResult).where(TaskResult.id == dlr["id"]))
+                    tr_row = tr.scalar_one_or_none()
+                    if tr_row:
+                        tr_row.local_pdf_path = dlr.get("pdf_path", "")
+                elif dlr["status"] == "failed":
+                    failed += 1
+                else:
+                    skipped += 1
+
+            await db.commit()  # 每批落库
+
+            await broadcast_event(instance_id, "download.progress", {
+                "success": success, "failed": failed, "skipped": skipped, "total": total,
+            })
+            logger.info(f"Download progress {instance_no}: {success + failed + skipped}/{total}")
 
         instance.status = "completed"
         instance.completed_at = timezone.now()
+        instance.error_message = None  # 清除历史错误/超时回收提示，避免残留展示
         await db.commit()
 
         await svc.complete(item_id, json.dumps({
@@ -161,12 +175,11 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
             "success": success,
             "failed": failed,
             "skipped": skipped,
-            "total": len(records),
+            "total": total,
         }, ensure_ascii=False))
 
-        from app.routers.sse import broadcast_event
         await broadcast_event(instance_id, "download.progress", {
-            "success": success, "failed": failed, "skipped": skipped, "total": len(records),
+            "success": success, "failed": failed, "skipped": skipped, "total": total,
         })
         await broadcast_event(instance_id, "task.completed", {
             "status": "completed", "completed_at": timezone.now().isoformat(),
@@ -195,7 +208,16 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
     except Exception as e:
         logger.error(f"Download failed: {e}", exc_info=True)
         try:
-            instance.error_message = str(e)[:500]
+            # 异常可能已破坏当前事务：先回滚，确保后续用全新事务可靠落库
+            await db.rollback()
+        except Exception:
+            pass
+        try:
+            # 失败/异常时把实例回退到审核态（而不是悬挂在 downloading/download_queued），
+            # 用户可重新触发下载；已落库的记录会在重跑时自动跳过（断点续传）。
+            if instance.status in ("downloading", "download_queued"):
+                instance.status = "analyzing_completed"
+            instance.error_message = f"下载失败：{str(e)[:200]}（已下载的记录将自动跳过，可重新触发）"
             await db.commit()
         except Exception:
             pass
@@ -213,11 +235,6 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
                 "completed_at": timezone.now().isoformat(),
                 "stats": {},
             }, module_key="下载")
-        except Exception:
-            pass
-        try:
-            # 异常可能已破坏当前事务，先回滚再标记失败，确保队列行可靠落库
-            await db.rollback()
         except Exception:
             pass
         await svc.fail(item_id, str(e)[:500])

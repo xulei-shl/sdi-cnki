@@ -5,7 +5,7 @@ from typing import Any
 
 from app.utils import timezone
 
-from sqlalchemy import select, func, and_, or_, delete
+from sqlalchemy import select, func, and_, or_, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.task_queue import TaskQueueItem
@@ -52,12 +52,19 @@ class TaskQueueService:
         return item
 
     async def dequeue(self, queue_type: str) -> TaskQueueItem | None:
-        # pending 与 retrying 都可被拾取：retrying 是失败后待重试的任务，
-        # 若只拾取 pending，重试机制将永远失效并造成永久卡死。
-        # retrying 需满足退避时间（started_at 为 fail() 记录的失败时间点）。
+        """原子抢占任务（UPDATE...RETURNING 单语句，SQLite 下并发安全）。
+
+        重要语义：只有真正拿到执行权（被某个 Worker 消费者取走并立即执行）时
+        才写入 running；排队中的任务保持 pending/retrying。因此
+        running 状态永远代表“正在执行”，不再出现“队列行 running 但实际在等
+        并发信号量”的假象。
+
+        pending 与 retrying 都可被拾取：retrying 是失败后待重试的任务，
+        需满足退避时间（started_at 为 fail() 记录的失败时间点）。
+        """
         cutoff = timezone.now() - timedelta(seconds=RETRY_DELAY_SECONDS)
-        stmt = (
-            select(TaskQueueItem)
+        subq = (
+            select(TaskQueueItem.id)
             .where(
                 TaskQueueItem.queue_type == queue_type,
                 or_(
@@ -70,15 +77,28 @@ class TaskQueueService:
             )
             .order_by(TaskQueueItem.priority.asc(), TaskQueueItem.created_at.asc())
             .limit(1)
-            .with_for_update(skip_locked=True)
+            .scalar_subquery()
+        )
+        stmt = (
+            update(TaskQueueItem)
+            .where(TaskQueueItem.id == subq)
+            .values(status="running", started_at=timezone.now())
+            .returning(TaskQueueItem.id, TaskQueueItem.task_type, TaskQueueItem.params_json, TaskQueueItem.queue_type)
         )
         result = await self.db.execute(stmt)
-        item = result.scalar_one_or_none()
-        if item:
-            item.status = "running"
-            item.started_at = timezone.now()
+        row = result.fetchone()
+        if row:
             await self.db.commit()
-        return item
+            return TaskQueueItem(
+                id=row.id,
+                task_type=row.task_type,
+                params_json=row.params_json,
+                queue_type=row.queue_type,
+                status="running",
+            )
+        # 无任务可抢：结束空事务
+        await self.db.rollback()
+        return None
 
     async def complete(self, item_id: int, result_json: str | None = None) -> None:
         stmt = select(TaskQueueItem).where(TaskQueueItem.id == item_id)
@@ -88,6 +108,7 @@ class TaskQueueService:
         if item and item.status != "cancelled":
             item.status = "completed"
             item.completed_at = timezone.now()
+            item.error_message = None  # 成功后清除历史错误/超时回收提示
             if result_json:
                 item.result_json = result_json
             await self.db.commit()
@@ -123,7 +144,7 @@ class TaskQueueService:
                 TaskQueueItem.status == "running",
             )
         )
-        reclaimed = 0
+        reclaimed_items = []
         for item in result.scalars().all():
             if not item.started_at:
                 continue
@@ -132,10 +153,32 @@ class TaskQueueService:
                 item.status = "failed"
                 item.error_message = "自动回收：任务运行超过配置时限(timeout_sec)仍处于 running，已标记失败，请重新触发"
                 item.completed_at = now
-                reclaimed += 1
-        if reclaimed:
+                reclaimed_items.append(item)
+        if reclaimed_items:
             await self.db.commit()
-        return reclaimed
+            if queue_type == "download":
+                # 下载任务超时回收后，把对应实例从 downloading/download_queued 回退到审核态，
+                # 避免“实例显示下载中但实际没有任务在跑”的悬挂状态。
+                await self._revert_download_instances(reclaimed_items)
+        return len(reclaimed_items)
+
+    async def _revert_download_instances(self, items: list[TaskQueueItem]) -> None:
+        from app.models.task_instance import TaskInstance
+        changed = False
+        for item in items:
+            key = item.task_key or ""
+            if not key.startswith("download_"):
+                continue
+            inst_no = key[len("download_"):]
+            inst = (await self.db.execute(
+                select(TaskInstance).where(TaskInstance.instance_no == inst_no)
+            )).scalar_one_or_none()
+            if inst and inst.status in ("downloading", "download_queued"):
+                inst.status = "analyzing_completed"
+                inst.error_message = "下载任务超时被回收，请重新触发下载"
+                changed = True
+        if changed:
+            await self.db.commit()
 
     async def retry_failed(self, item_id: int) -> None:
         stmt = select(TaskQueueItem).where(TaskQueueItem.id == item_id)
