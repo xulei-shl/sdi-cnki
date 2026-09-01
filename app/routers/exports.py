@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
 
 from app.utils import timezone
 from fastapi.responses import FileResponse
@@ -23,6 +23,7 @@ router = APIRouter()
 @router.post("/task-instances/{instance_id}/export")
 async def start_export(
     instance_id: int,
+    body: dict = Body(default={}),
     current_user=Depends(get_current_user_from_header),
     db: AsyncSession = Depends(get_db),
 ):
@@ -32,6 +33,8 @@ async def start_export(
         raise NotFoundError("TaskInstance", instance_id)
     if instance.status not in ("analyzing_completed", "download_queued", "downloading", "completed", "failed"):
         raise ValidationError(f"状态 {instance.status} 不允许导出，需要 analyzing_completed/download_queued/downloading/completed/failed")
+
+    include_pdfs = body.get("include_pdfs", True)
 
     export_task = ExportTask(
         task_instance_id=instance_id,
@@ -50,6 +53,7 @@ async def start_export(
             "export_id": export_task.id,
             "instance_id": instance_id,
             "instance_no": instance.instance_no,
+            "include_pdfs": include_pdfs,
         }),
         task_key=f"export_{instance.instance_no}_{export_task.id}",
     )

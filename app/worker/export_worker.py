@@ -27,6 +27,7 @@ async def run_export(db: AsyncSession, task_item_id: int, params_json: str) -> N
     params = json.loads(params_json)
     export_id = params.get("export_id")
     instance_id = params.get("instance_id")
+    include_pdfs = params.get("include_pdfs", True)
 
     if not export_id or not instance_id:
         raise ValueError("缺少 export_id 或 instance_id 参数")
@@ -40,7 +41,7 @@ async def run_export(db: AsyncSession, task_item_id: int, params_json: str) -> N
     await db.commit()
 
     try:
-        zip_path = await create_export_package(db, export_task)
+        zip_path = await create_export_package(db, export_task, include_pdfs=include_pdfs)
 
         file_size = 0
         import os

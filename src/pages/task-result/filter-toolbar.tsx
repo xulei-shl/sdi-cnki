@@ -14,6 +14,8 @@ interface FilterToolbarProps {
   keyword: string
   publishYear: string
   includeDuplicate: boolean
+  includePdfs: boolean
+  exportDownloadProgress: { loaded: number; total: number } | null
   selectedCount: number
   moreOpen: boolean
   exporting: boolean
@@ -29,6 +31,7 @@ interface FilterToolbarProps {
   onKeywordChange: (v: string) => void
   onPublishYearChange: (v: string) => void
   onIncludeDuplicateChange: (v: boolean) => void
+  onIncludePdfsChange: (v: boolean) => void
   onBatchPass: () => void
   onBatchReject: () => void
   onDownload: () => void
@@ -47,6 +50,8 @@ export function FilterToolbar({
   keyword,
   publishYear,
   includeDuplicate,
+  includePdfs,
+  exportDownloadProgress,
   selectedCount,
   moreOpen,
   exporting,
@@ -62,6 +67,7 @@ export function FilterToolbar({
   onKeywordChange,
   onPublishYearChange,
   onIncludeDuplicateChange,
+  onIncludePdfsChange,
   onBatchPass,
   onBatchReject,
   onDownload,
@@ -106,6 +112,10 @@ export function FilterToolbar({
         {canDownload && (
           <Button size="sm" variant="outline" onClick={onDownload}>PDF 下载</Button>
         )}
+        <label className="flex items-center gap-1 text-sm bg-accent/50 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/80 transition-colors">
+          <Checkbox checked={includePdfs} onChange={(e) => { onIncludePdfsChange(e.target.checked) }} />
+          <span className="ml-1">含PDF</span>
+        </label>
         {canShowMore && (
           <div className="relative">
             <Button size="sm" variant="outline" onClick={onMoreToggle}>
@@ -115,13 +125,20 @@ export function FilterToolbar({
               <>
                 <div className="fixed inset-0 z-40" onClick={onMoreClose} />
                 <div className="absolute right-0 top-full mt-1 z-50 min-w-[130px] rounded-md border bg-popover p-1 shadow-md">
-                  <button
-                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:pointer-events-none"
-                    onClick={onExport}
-                    disabled={exporting}
-                  >
-                    {exporting ? '导出中...' : '结果导出'}
-                  </button>
+          <button
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:pointer-events-none"
+            onClick={onExport}
+            disabled={exporting}
+          >
+            {exporting ? '导出中...' : '结果导出'}
+          </button>
+          {exportDownloadProgress && (
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+              {exportDownloadProgress.total > 0
+                ? `下载中 ${(exportDownloadProgress.loaded / 1024 / 1024).toFixed(1)}MB / ${(exportDownloadProgress.total / 1024 / 1024).toFixed(1)}MB`
+                : `下载中 ${(exportDownloadProgress.loaded / 1024 / 1024).toFixed(1)}MB...`}
+            </div>
+          )}
                   {canRetryAnalysis && (
                     <button
                       className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:pointer-events-none"

@@ -46,6 +46,8 @@ export default function TaskResultPage() {
   const [moreOpen, setMoreOpen] = useState(false)
 
   const [exporting, setExporting] = useState(false)
+  const [exportDownloadProgress, setExportDownloadProgress] = useState<{ loaded: number; total: number } | null>(null)
+  const [includePdfs, setIncludePdfs] = useState(true)
   const [retrying, setRetrying] = useState(false)
   const [confirmAction, setConfirmAction] = useState<{ type: string; count?: number } | null>(null)
   const [importing, setImporting] = useState(false)
@@ -121,7 +123,13 @@ export default function TaskResultPage() {
     sse.on('export.completed', async (data: any) => {
       setExporting(false)
       if (data?.export_id) {
-        try { await downloadExportFile(data.export_id) } catch { toast.error('下载文件失败') }
+        setExportDownloadProgress({ loaded: 0, total: 0 })
+        try {
+          await downloadExportFile(data.export_id, (loaded, total) => {
+            setExportDownloadProgress({ loaded, total })
+          })
+        } catch { toast.error('下载文件失败') }
+        setExportDownloadProgress(null)
       }
       toast.success('导出完成')
     })
@@ -337,7 +345,7 @@ export default function TaskResultPage() {
         case 'export': {
           setExporting(true)
           try {
-            const res = await startExport(instanceId)
+            const res = await startExport(instanceId, includePdfs)
             const exportId = res.data.export_id
             toast.success('导出任务已加入队列')
             const poll = async () => {
@@ -345,7 +353,13 @@ export default function TaskResultPage() {
                 const sr = await getExportStatus(exportId)
                 if (sr.data.status === 'completed') {
                   setExporting(false)
-                  try { await downloadExportFile(exportId) } catch { toast.error('下载文件失败') }
+                  setExportDownloadProgress({ loaded: 0, total: 0 })
+                  try {
+                    await downloadExportFile(exportId, (loaded, total) => {
+                      setExportDownloadProgress({ loaded, total })
+                    })
+                  } catch { toast.error('下载文件失败') }
+                  setExportDownloadProgress(null)
                   toast.success('导出完成')
                 } else if (sr.data.status === 'failed') {
                   setExporting(false)
@@ -421,6 +435,8 @@ export default function TaskResultPage() {
                 keyword={keyword}
                 publishYear={publishYear}
                 includeDuplicate={includeDuplicate}
+                includePdfs={includePdfs}
+                exportDownloadProgress={exportDownloadProgress}
                 selectedCount={selectedIds.size}
                 moreOpen={moreOpen}
                 exporting={exporting}
@@ -436,6 +452,7 @@ export default function TaskResultPage() {
                 onKeywordChange={(v) => { setKeyword(v); resetPage() }}
                 onPublishYearChange={(v) => { setPublishYear(v); resetPage() }}
                 onIncludeDuplicateChange={(v) => { setIncludeDuplicate(v); resetPage() }}
+                onIncludePdfsChange={setIncludePdfs}
                 onBatchPass={handleBatchPass}
                 onBatchReject={handleBatchReject}
                 onDownload={handleDownload}

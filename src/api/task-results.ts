@@ -60,23 +60,49 @@ export function getDownloadProgress(instanceId: number) {
   return http.get(`/task-instances/${instanceId}/download-progress`)
 }
 
-export function startExport(instanceId: number) {
-  return http.post<{ export_id: number; status: string; message: string }>(`/task-instances/${instanceId}/export`)
+export function startExport(instanceId: number, includePdfs: boolean = true) {
+  return http.post<{ export_id: number; status: string; message: string }>(
+    `/task-instances/${instanceId}/export`,
+    { include_pdfs: includePdfs },
+  )
 }
 
-export async function downloadExportFile(exportId: number) {
-  const response = await http.get(`/exports/${exportId}/download`, { responseType: 'blob' })
-  const disposition = response.headers['content-disposition'] || ''
-  const match = disposition.match(/filename="?(.+?)"?$/)
+export async function downloadExportFile(
+  exportId: number,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<void> {
+  const token = localStorage.getItem('access_token') || ''
+  const res = await fetch(`/api/v1/exports/${exportId}/download`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || `下载失败 (${res.status})`)
+  }
+  const contentDisposition = res.headers.get('Content-Disposition') || ''
+  const match = contentDisposition.match(/filename="?(.+?)"?$/)
   const filename = match?.[1] || `export_${exportId}.zip`
-  const url = window.URL.createObjectURL(response.data)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.URL.revokeObjectURL(url)
+  const total = Number(res.headers.get('Content-Length')) || 0
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error('浏览器不支持流式下载')
+  const chunks: BlobPart[] = []
+  let loaded = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    loaded += value.length
+    onProgress?.(loaded, total)
+  }
+  const blob = new Blob(chunks, { type: 'application/zip' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
 export function getExportStatus(exportId: number) {

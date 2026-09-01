@@ -83,7 +83,9 @@ export default function TaskInstancePage() {
           const sr = await getExportStatus(exportId)
           if (sr.data.status === 'completed') {
             setExportingId(null)
-            try { await downloadExportFile(exportId) } catch { toast.error('下载文件失败') }
+            try {
+              await downloadExportFile(exportId)
+            } catch { toast.error('下载文件失败') }
             toast.success('导出完成')
           } else if (sr.data.status === 'failed') {
             setExportingId(null)

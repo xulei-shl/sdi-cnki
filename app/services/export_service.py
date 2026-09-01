@@ -27,7 +27,7 @@ logger = get_logger("export_service")
 settings = get_settings()
 
 
-async def create_export_package(db: AsyncSession, export_task: ExportTask) -> str:
+async def create_export_package(db: AsyncSession, export_task: ExportTask, *, include_pdfs: bool = True) -> str:
     """生成导出 ZIP 包，返回文件路径。"""
     instance_id = export_task.task_instance_id
 
@@ -64,9 +64,11 @@ async def create_export_package(db: AsyncSession, export_task: ExportTask) -> st
         enw_path = os.path.join(tmp_dir, "references.enw")
         _generate_enw(task_results, enw_path)
 
-        pdfs_dir = os.path.join(tmp_dir, "pdfs")
-        os.makedirs(pdfs_dir, exist_ok=True)
-        pdf_count = _collect_pdfs(task_results, pdfs_dir)
+        pdf_count = 0
+        if include_pdfs:
+            pdfs_dir = os.path.join(tmp_dir, "pdfs")
+            os.makedirs(pdfs_dir, exist_ok=True)
+            pdf_count = _collect_pdfs(task_results, pdfs_dir)
 
         zip_filename = f"export_{instance.instance_no}.zip"
         zip_path = os.path.join(settings.exports_dir, zip_filename)
