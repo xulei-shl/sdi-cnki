@@ -22,6 +22,18 @@ from app.task_queue.crud import TaskQueueService
 from app.utils.logging import get_logger
 
 logger = get_logger("download_worker")
+
+
+def _has_chinese(text: str | None) -> bool:
+    """Return True if *text* contains at least one CJK Unified Ideograph."""
+    if not text:
+        return False
+    for ch in text:
+        if '\u4e00' <= ch <= '\u9fff':
+            return True
+    return False
+
+
 settings = get_settings()
 
 # 每批下载条数：=1 即严格串行（与历史行为一致，外部站点压力最小），
@@ -110,6 +122,13 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
         def _download_one(rec: TaskResult) -> dict:
             """同步下载单条记录（在 to_thread 中执行）。"""
             try:
+                # 题名不含中文 → 自动跳过（非中文学术论文，CNKI 等源无法下载）
+                if not _has_chinese(rec.title):
+                    return {
+                        "id": rec.id,
+                        "status": "skipped",
+                        "error": "题名不含中文，自动跳过",
+                    }
                 pdf_path = download_pdf(
                     article_title=rec.title,
                     output_dir=output_dir,
