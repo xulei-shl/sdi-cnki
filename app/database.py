@@ -20,6 +20,12 @@ engine = create_async_engine(
 def _set_sqlite_pragma(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
+    # WAL：读写并发，消除 delete 模式下的整库写锁风暴（database is locked）
+    # synchronous=NORMAL：WAL 下标准搭配，降低每次提交的 fsync 开销
+    # busy_timeout：并发写者让出锁的等待上限
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=30000")
+    cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.close()
 
 async_session_factory = async_sessionmaker(

@@ -78,6 +78,9 @@ export default function TaskInstancePage() {
       const exportId = res.data.export_id
       toast.success('导出任务已加入队列')
 
+      // 轮询上限：防止后端异常（如 worker 挂掉、导出任务永久 pending）时按钮无限"导出中"
+      const EXPORT_POLL_LIMIT = 40 // 40 × 3s ≈ 2 分钟
+      let attempts = 0
       const poll = async () => {
         try {
           const sr = await getExportStatus(exportId)
@@ -91,7 +94,13 @@ export default function TaskInstancePage() {
             setExportingId(null)
             toast.error(`导出失败: ${sr.data.error_message || '未知错误'}`)
           } else {
-            setTimeout(poll, 3000)
+            attempts += 1
+            if (attempts >= EXPORT_POLL_LIMIT) {
+              setExportingId(null)
+              toast.error('导出超时，请稍后在结果页重新导出')
+            } else {
+              setTimeout(poll, 3000)
+            }
           }
         } catch {
           setExportingId(null)

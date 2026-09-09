@@ -4,11 +4,14 @@ from datetime import timedelta
 from typing import Any
 
 from app.utils import timezone
+from app.utils.logging import get_logger
 
 from sqlalchemy import select, func, and_, or_, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.task_queue import TaskQueueItem
+
+logger = get_logger("task_queue")
 
 # retrying 状态被重新拾取前的退避时间：失败后至少等待这么久才重试，
 # 避免对外部服务（CNKI/LLM 等）在短时间内连续重试 3 次。
@@ -88,6 +91,11 @@ class TaskQueueService:
         result = await self.db.execute(stmt)
         row = result.fetchone()
         if row:
+            if not (row.params_json or "").strip():
+                logger.error(
+                    f"dequeue 发现空 params_json（id={row.id} queue_type={row.queue_type} "
+                    f"task_type={row.task_type}）——数据异常，任务将按失败回收"
+                )
             await self.db.commit()
             return TaskQueueItem(
                 id=row.id,

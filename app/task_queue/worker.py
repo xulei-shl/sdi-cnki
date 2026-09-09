@@ -37,7 +37,10 @@ class BaseWorker:
             try:
                 await self.process(db, item_id, params_json)
             except Exception as e:
-                logger.error(f"Worker error: {e}", exc_info=True)
+                logger.error(
+                    f"Worker error (item_id={item_id}, params_json={params_json!r}): {e}",
+                    exc_info=True,
+                )
                 try:
                     # 若 process 内的异常已破坏事务（如 IntegrityError/PendingRollbackError），
                     # 先回滚再标记失败，否则 svc.fail 自身会再次抛错，队列行只能等超时回收。
@@ -46,6 +49,13 @@ class BaseWorker:
                     pass
                 svc = TaskQueueService(db)
                 await svc.fail(item_id, str(e))
+                # 业务对象回收：把实例/导出任务从入队中间态回退到可恢复状态，
+                # 避免“队列行失败但页面永久卡在排队中/导出中”。
+                try:
+                    from app.worker.recovery import reconcile_failed_task
+                    await reconcile_failed_task(db, item_id, str(e))
+                except Exception as re:
+                    logger.error(f"Reconcile error for task {item_id}: {re}", exc_info=True)
 
     async def _consumer(self) -> None:
         """单个消费者：dequeue 拿到任务后立即执行。
