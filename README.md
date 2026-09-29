@@ -58,6 +58,33 @@ API 文档：http://localhost:8456/docs
 - **数据导出**：异步 ZIP 打包（含 results.xlsx + analysis_results.xlsx + references.enw + PDFs）
 - **实时推送**：SSE 进度（检索/分析/下载），企业微信 Webhook 通知（按账号独立配置）
 - **权限控制**：Admin/User 双角色，动态路由 + 按钮级鉴权
+- **开放接口**：API Key 鉴权的元数据检索作业接口，供 agent / 第三方系统调用（仅检索+元数据，不含 LLM/PDF）
+
+## 开放接口（供 agent / 第三方系统）
+
+基础路径 `/api/v1/open`，API Key 鉴权（管理员在网页后台用 JWT 创建）。异步作业模型：提交即返回 `job_id`，长轮询状态（带阶段 stage + 独立心跳，可区分"耗时长"与"卡死"），结果以 JSON 分页为主、原始 Excel 走短期签名直链。
+
+```bash
+# 管理员创建 Key（明文仅返回一次）
+curl -X POST http://localhost:8456/api/v1/open/keys \
+  -H "Authorization: Bearer <管理员JWT>" -H "Content-Type: application/json" \
+  -d '{"name": "my-agent"}'
+
+# 提交检索作业（max_export 仅支持 50/100，默认 50）
+curl -X POST http://localhost:8456/api/v1/open/metadata-jobs \
+  -H "Authorization: Bearer <API Key>" -H "Content-Type: application/json" \
+  -d '{"query": "阅读推广", "max_export": 50, "idempotency_key": "run-1"}'
+
+# 长轮询状态（wait≤25s）→ succeeded 后取结果
+curl "http://localhost:8456/api/v1/open/metadata-jobs/<job_id>?wait=25" \
+  -H "Authorization: Bearer <API Key>"
+curl "http://localhost:8456/api/v1/open/metadata-jobs/<job_id>/results?format=json" \
+  -H "Authorization: Bearer <API Key>"
+```
+
+与网页的关系：与网页检索共用同一串行 `cnki` 队列（同一 CNKI 账号，永不并发抢登录），但 API 作业优先级低于网页任务（网页请求先出队）；`source=api` 的作业不出现在网页列表/统计中，也不触发任何通知。
+
+完整契约见 **[docs/开放接口文档_v1.md](docs/开放接口文档_v1.md)**（含状态机、stage 枚举、心跳判定规则、错误码、curl 全流程示例与真实链路验证记录）。
 
 ## Hiagent AI 助手浮窗
 
@@ -136,7 +163,7 @@ sdi-cnki/ (v2)
 
 | 队列 | 用途 | 并发 | 说明 |
 |------|------|------|------|
-| `cnki` | CNKI 检索 | 1 | 浏览器操作，串行；多用户任务排队等候 |
+| `cnki` | CNKI 检索 | 1 | 浏览器操作，串行；多用户任务排队等候；网页任务优先出队（API 作业 priority=10 让位） |
 | `llm` | LLM 分析 | 5 | API 调用 |
 | `download` | PDF 下载 | 1 | 浏览器操作，串行；同队列内逐条执行，完成后下一个用户任务才启动 |
 | `export` | 导出打包 | 2 | 文件操作 |
@@ -160,14 +187,17 @@ pip install -r requirements.txt
 playwright install firefox
 npm install && npm run build
 
-# 2. 初始化数据库（自动在首次启动完成，亦可手动）
+# 2. 数据库迁移（增量应用 alembic/versions/ 下的迁移，不会丢失数据）
+alembic upgrade head
+
+# 3. 初始化数据库（自动在首次启动完成，亦可手动）
 mkdir -p data
 
-# 3. 防火墙（允许局域网访问后端 API 和前端页面）
+# 4. 防火墙（允许局域网访问后端 API 和前端页面）
 ufw allow 8456/tcp comment 'SDI-CNKI Backend API'
 ufw allow 8848/tcp comment 'SDI-CNKI Frontend'
 
-# 4. systemd 服务（开机自启）
+# 5. systemd 服务（开机自启）
 cp systemd/*.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now sdi-cnki-backend sdi-cnki-frontend
