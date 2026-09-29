@@ -10,7 +10,7 @@ from app.config import get_settings
 from app.database import init_db, engine, async_session_factory
 from app.utils.exceptions import AppError
 from app.utils.logging import setup_logging, get_logger, request_id_var, user_id_var
-from app.routers import auth, users, llm_configs, system_configs, system_prompts, prompt_templates, meta_tasks, task_instances, task_results, sse, exports, user_notification_config, admin_notification_configs
+from app.routers import auth, users, llm_configs, system_configs, system_prompts, prompt_templates, meta_tasks, task_instances, task_results, sse, exports, user_notification_config, admin_notification_configs, openapi_v1
 
 settings = get_settings()
 setup_logging()
@@ -164,6 +164,7 @@ app.include_router(sse.router, prefix="/api/v1/tasks", tags=["SSE"])
 app.include_router(exports.router, prefix="/api/v1", tags=["Exports"])
 app.include_router(user_notification_config.router, prefix="/api/v1/user", tags=["User Notification Config"])
 app.include_router(admin_notification_configs.router, prefix="/api/v1/admin", tags=["Admin Notification Configs"])
+app.include_router(openapi_v1.router, prefix="/api/v1/open", tags=["Open API"])
 
 
 @app.get("/api/v1/health")

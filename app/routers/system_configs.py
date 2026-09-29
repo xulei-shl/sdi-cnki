@@ -94,9 +94,10 @@ async def get_stats(
 ):
     from app.models.meta_task import MetaTask
     from app.models.task_instance import TaskInstance
-    mt_count = (await db.execute(select(func.count(MetaTask.id)))).scalar()
-    ti_count = (await db.execute(select(func.count(TaskInstance.id)))).scalar()
-    running = (await db.execute(select(func.count(TaskInstance.id)).where(TaskInstance.status == "running"))).scalar()
+    # 仅统计网页数据，排除开放接口提交的作业
+    mt_count = (await db.execute(select(func.count(MetaTask.id)).where(MetaTask.source == "web"))).scalar()
+    ti_count = (await db.execute(select(func.count(TaskInstance.id)).where(TaskInstance.source == "web"))).scalar()
+    running = (await db.execute(select(func.count(TaskInstance.id)).where(TaskInstance.status == "running", TaskInstance.source == "web"))).scalar()
     return {
         "meta_task_count": mt_count,
         "task_instance_count": ti_count,

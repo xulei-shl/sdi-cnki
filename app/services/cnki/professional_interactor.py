@@ -55,13 +55,24 @@ EXPORT_PAGE_READY_SELECTORS = (
 class ProfessionalCnkiInteractor:
     """Sync CNKI professional-search interactor — runs in thread pool via asyncio.to_thread."""
 
-    def __init__(self, browser: CnkiBrowser, output_dir: str | Path):
+    def __init__(self, browser: CnkiBrowser, output_dir: str | Path, on_stage=None):
         self.browser = browser
         self.page: Page = browser.page
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._tmp_dir = self.output_dir / "_tmp"
         self._tmp_dir.mkdir(parents=True, exist_ok=True)
+        # 可选阶段回调：on_stage(stage: str, extra: dict)。不传则行为与原来完全一致。
+        self._on_stage = on_stage
+
+    def _emit(self, stage: str, **extra: Any) -> None:
+        """上报检索阶段。进度上报失败只记日志，绝不影响检索本身。"""
+        if self._on_stage is None:
+            return
+        try:
+            self._on_stage(stage, extra)
+        except Exception as e:
+            logger.warning(f"[CNKI-PROFESSIONAL] Stage callback failed ({stage}): {e}")
 
     # ═══════════════════════════════════════════════════════════
     #  FORM — professional search
@@ -724,13 +735,16 @@ class ProfessionalCnkiInteractor:
         logger.info(f"[CNKI-PROFESSIONAL] Starting search: A={group_a} B={group_b} AU={au_group} FU={fu_group}")
 
         self.browser.save_session()
+        self._emit("navigating")
         self.browser.goto(CnkiBrowser.ADVANCED_SEARCH_URL)
         _time.sleep(random.uniform(2, 3))
+        self._emit("authenticating")
         self._ensure_captcha_cleared()
 
         if not self._is_search_page():
             raise NavigationStateError("打开检索页面失败")
 
+        self._emit("searching")
         self._fill_professional_search_form(
             group_a=group_a,
             group_b=group_b,
@@ -743,7 +757,9 @@ class ProfessionalCnkiInteractor:
             au_group=au_group,
             fu_group=fu_group,
         )
+        self._emit("submitting")
         self._submit_search()
+        self._emit("waiting_results")
         self._wait_for_results_ready()
 
         summary = self._parse_summary()
@@ -751,6 +767,7 @@ class ProfessionalCnkiInteractor:
         logger.info(f"[CNKI-PROFESSIONAL] Total results: {total}")
         if total == 0:
             raise NoResultsError("检索结果为空")
+        self._emit("collecting", total=total)
 
         max_export = params.get("max_export", 50)
         export_limit = min(total, max_export)
@@ -762,6 +779,7 @@ class ProfessionalCnkiInteractor:
         batch_remaining = export_limit
 
         for batch_idx in range(1, batch_count + 1):
+            self._emit("exporting", current=batch_idx, total=batch_count)
             batch_size = min(EXPORT_BATCH_SIZE, batch_remaining)
             self._select_batch(batch_size)
             excel_path, txt_path = self._export_batch(query_label, batch_idx)
@@ -775,6 +793,7 @@ class ProfessionalCnkiInteractor:
 
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         slug = self._slug(query_label)[:40]
+        self._emit("merging")
         merged_path = self.output_dir / f"{timestamp}-{slug}-merged.xlsx"
         frames = [pd.read_excel(Path(bf["excel"]), engine="openpyxl").fillna("")
                   for bf in batch_files if Path(bf["excel"]).exists()]

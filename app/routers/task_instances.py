@@ -106,7 +106,8 @@ async def list_task_instances(
     current_user = Depends(get_current_user_from_header),
     db: AsyncSession = Depends(get_db),
 ):
-    where = []
+    # 开放接口提交的作业不在网页中展示
+    where = [TaskInstance.source == "web"]
     if current_user.role != "admin":
         where.append(TaskInstance.creator_id == current_user.id)
     if status_filter:

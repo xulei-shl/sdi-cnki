@@ -141,7 +141,8 @@ async def list_meta_tasks(
     current_user = Depends(get_current_user_from_header),
     db: AsyncSession = Depends(get_db),
 ):
-    where = []
+    # 开放接口内部模板不在网页中展示
+    where = [MetaTask.source == "web"]
     if current_user.role != "admin":
         where.append(MetaTask.creator_id == current_user.id)
     if keyword:
@@ -243,7 +244,7 @@ async def list_dedup_candidates(
     db: AsyncSession = Depends(get_db),
 ):
     """列出当前用户可作为去重范围参考的任务模板"""
-    where = []
+    where = [MetaTask.source == "web"]
     if current_user.role != "admin":
         where.append(MetaTask.creator_id == current_user.id)
     stmt = select(MetaTask).where(*where).options(

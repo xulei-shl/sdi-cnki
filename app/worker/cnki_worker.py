@@ -9,11 +9,12 @@ from pathlib import Path
 from app.utils import timezone
 from typing import Any
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
+from app.database import async_session_factory
 from app.models.meta_task import MetaTask
 from app.models.task_instance import TaskInstance
 from app.models.task_result import TaskResult
@@ -30,6 +31,73 @@ settings = get_settings()
 
 # Maximum valid data count to auto-trigger LLM analysis (0 = always trigger)
 MAX_AUTO_LLM_TRIGGER = 2000
+
+# 心跳间隔：与浏览器步骤解耦，让调用方能区分“步骤耗时”与“进程卡死”
+HEARTBEAT_INTERVAL_SEC = 5
+
+# 检索专用单线程 executor：与默认线程池（PDF 下载的 to_thread）隔离，
+# 避免 Playwright sync dispatcher loop 泄漏后跨任务污染（详见 20260929 changelog）。
+_search_executor = __import__("concurrent.futures", fromlist=["ThreadPoolExecutor"]).ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="cnki-search",
+)
+
+STAGE_MESSAGES: dict[str, str] = {
+    "launching": "正在启动浏览器",
+    "navigating": "正在打开检索页面",
+    "authenticating": "正在校验登录状态",
+    "searching": "正在填写检索条件",
+    "submitting": "正在提交检索",
+    "waiting_results": "已提交检索，正在等待结果页返回",
+    "collecting": "正在读取检索结果数量",
+    "exporting": "正在分批导出元数据",
+    "merging": "正在合并导出批次",
+    "parsing": "正在解析元数据并入库",
+    "done": "检索完成",
+}
+
+
+async def _save_progress(instance_id: int, stage: str, extra: dict | None = None) -> None:
+    """把检索阶段写入任务实例，供开放接口轮询（跨进程可见）。"""
+    extra = extra or {}
+    try:
+        async with async_session_factory() as db:
+            await db.execute(
+                update(TaskInstance)
+                .where(TaskInstance.id == instance_id)
+                .values(
+                    progress_stage=stage,
+                    progress_message=STAGE_MESSAGES.get(stage, stage),
+                    progress_current=extra.get("current"),
+                    progress_total=extra.get("total"),
+                    heartbeat_at=timezone.now(),
+                )
+            )
+            await db.commit()
+    except Exception as e:
+        # 进度上报属于可观测性，失败不能影响检索本身
+        logger.warning(f"progress update failed (instance={instance_id}, stage={stage}): {e}")
+
+
+async def _touch_heartbeat(instance_id: int) -> None:
+    try:
+        async with async_session_factory() as db:
+            await db.execute(
+                update(TaskInstance)
+                .where(TaskInstance.id == instance_id)
+                .values(heartbeat_at=timezone.now())
+            )
+            await db.commit()
+    except Exception as e:
+        logger.warning(f"heartbeat update failed (instance={instance_id}): {e}")
+
+
+async def _heartbeat_loop(instance_id: int, stop: asyncio.Event) -> None:
+    """独立心跳：即使某个浏览器步骤长时间不推进，心跳也在走。"""
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=HEARTBEAT_INTERVAL_SEC)
+        except asyncio.TimeoutError:
+            await _touch_heartbeat(instance_id)
 
 
 def _extract_queries(params: dict) -> list[str]:
@@ -71,6 +139,7 @@ def _run_search_sync(
     params: dict,
     instance_no: str,
     uploads_dir: str,
+    on_stage=None,
 ) -> dict:
     """Run search in a single browser session.
 
@@ -87,9 +156,11 @@ def _run_search_sync(
     if pro_params is None:
         return {"final_file": None, "total": 0, "exported": 0, "batches": [], "no_results": True}
 
+    if on_stage:
+        on_stage("launching", {})
     with CnkiBrowser(headless=True) as browser:
         browser.goto(CnkiBrowser.HOME_URL)
-        interactor = ProfessionalCnkiInteractor(browser, base_dir)
+        interactor = ProfessionalCnkiInteractor(browser, base_dir, on_stage=on_stage)
         result = interactor.execute_search(pro_params)
     return result
 
@@ -112,6 +183,7 @@ async def process_search_results(
         logger.info(f"Instance {instance.instance_no}: no results")
         return
 
+    await _save_progress(instance.id, "parsing")
     instance.search_result_file_path = final_file
     file_path = Path(final_file)
     if not file_path.exists():
@@ -200,21 +272,52 @@ async def run_cnki_search(
     instance.started_at = timezone.now()
     await db.commit()
 
+    # 开放接口任务：只取元数据，不进入通知 / SSE / LLM / 下载链路
+    is_api = (instance.source or "web") == "api"
+
     try:
         exec_params = json.loads(instance.execution_params) if isinstance(instance.execution_params, str) else instance.execution_params
         search_params = exec_params.get("search_params", {})
 
-        loop = asyncio.get_event_loop()
-        search_result = await loop.run_in_executor(
-            None,
-            _run_search_sync,
-            search_params,
-            instance_no,
-            settings.uploads_dir,
-        )
+        loop = asyncio.get_running_loop()
+        heartbeat_stop = asyncio.Event()
 
-        await process_search_results(db, instance, search_result)
+        def _on_stage(stage: str, extra: dict) -> None:
+            # 从浏览器线程回到事件循环写进度
+            asyncio.run_coroutine_threadsafe(_save_progress(instance_id, stage, extra), loop)
+
+        heartbeat_task = asyncio.create_task(_heartbeat_loop(instance_id, heartbeat_stop))
+        try:
+            # 必须用专用单线程 executor，不能与默认池共享：
+            # PDF 下载（asyncio.to_thread）在同一线程泄漏 Playwright sync 的 dispatcher
+            # event loop 后，默认池线程被复用会导致本检索报
+            # "Playwright Sync API inside the asyncio loop"（见 docs/changelog/20260929）。
+            # 专用单线程同时天然保证同进程内检索串行。
+            global _search_executor
+            search_result = await loop.run_in_executor(
+                _search_executor,
+                _run_search_sync,
+                search_params,
+                instance_no,
+                settings.uploads_dir,
+                _on_stage,
+            )
+
+            await process_search_results(db, instance, search_result)
+        finally:
+            heartbeat_task.cancel()
+            await asyncio.gather(heartbeat_task, return_exceptions=True)
+
         await svc.complete(item_id, json.dumps({"status": "completed", "total": instance.search_result_count}))
+
+        if is_api or instance.valid_data_count:
+            await _save_progress(instance_id, "done")
+
+        if is_api:
+            instance.status = "completed"
+            instance.completed_at = timezone.now()
+            await db.commit()
+            return
 
         from app.routers.sse import broadcast_event
         await broadcast_event(
@@ -278,6 +381,8 @@ async def run_cnki_search(
         instance.completed_at = timezone.now()
         await db.commit()
         await svc.complete(item_id, '{"status": "completed", "total": 0}')
+        if is_api:
+            return
         from app.routers.sse import broadcast_event
         await broadcast_event(instance_id, "task.progress", {
             "status": "completed",
@@ -294,6 +399,9 @@ async def run_cnki_search(
         instance.status = "failed"
         instance.error_message = str(e)[:500]
         await db.commit()
+        if is_api:
+            await svc.fail(item_id, str(e)[:500])
+            return
         from app.services.notification import send_notification
         await send_notification(db, {
             "user_id": instance.creator.id if instance.creator else None,

@@ -17,3 +17,4 @@ from app.models.task_queue import TaskQueueItem
 from app.models.export_task import ExportTask
 from app.models.user_notification_config import UserNotificationConfig
 from app.models.instance_no_counter import InstanceNoCounter
+from app.models.api_key import ApiKey

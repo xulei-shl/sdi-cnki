@@ -45,6 +45,26 @@ def decode_token(token: str) -> dict[str, Any]:
         raise AuthenticationError("Invalid or expired token")
 
 
+def create_artifact_token(job_id: int, ttl_minutes: int) -> str:
+    """签发短期文件下载令牌，使下载 URL 可脱离 API Key 使用。"""
+    expire = datetime.utcnow() + timedelta(minutes=ttl_minutes)
+    return jwt.encode(
+        {"sub": str(job_id), "type": "artifact", "exp": expire},
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+    )
+
+
+def decode_artifact_token(token: str, job_id: int) -> None:
+    """校验文件下载令牌；不匹配则抛 AuthenticationError。"""
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    except JWTError:
+        raise AuthenticationError("Invalid or expired artifact token")
+    if payload.get("type") != "artifact" or payload.get("sub") != str(job_id):
+        raise AuthenticationError("Artifact token does not match the requested job")
+
+
 async def get_current_user(db: AsyncSession, token: str) -> User:
     payload = decode_token(token)
     user_id = payload.get("sub")

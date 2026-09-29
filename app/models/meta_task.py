@@ -19,6 +19,8 @@ class MetaTask(Base):
     schedule_cron = Column(String(100))
     is_periodic = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True, index=True)
+    # 来源：web=网页创建，api=开放接口内部使用的隐藏模板
+    source = Column(String(20), default="web", nullable=False)
     dedup_scope_meta_task_id = Column(Integer, ForeignKey("meta_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     last_executed_at = Column(DateTime)
     execution_count = Column(Integer, default=0)
