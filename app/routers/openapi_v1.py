@@ -3,7 +3,7 @@
 设计要点：
 - 提交即返回（202），作业走既有 cnki 队列 —— 该队列全局串行（并发=1），
   与网页触发的检索共用同一个 CNKI 账号与浏览器会话，二者天然排队互不抢登录态；
-- 作业队列优先级低于网页任务（priority 更大），网页请求优先出队；
+- 作业队列优先级高于网页任务（priority 更小），API 作业优先出队；
 - 状态接口带阶段 stage + 独立心跳 heartbeat，调用方据此区分“耗时长”与“卡死”；
 - 结果以 JSON 为主返回，原始 Excel 通过短期签名 URL 或内联下载获取；
 - 作业实例 source=api，不在网页列表/统计中展示，也不触发通知 / SSE / LLM / PDF 链路。
@@ -62,8 +62,8 @@ API_META_TASK_NAME = "开放接口检索（内部）"
 API_ALLOWED_MAX_EXPORT = (50, 100)
 API_DEFAULT_MAX_EXPORT = 50
 
-# 大于网页任务的 0，使 dequeue 的 priority ASC 排序让网页任务优先
-API_QUEUE_PRIORITY = 10
+# 小于网页任务的 0，使 dequeue 的 priority ASC 排序让 API 作业优先出队
+API_QUEUE_PRIORITY = -1
 API_ARTIFACT_TOKEN_TTL_MIN = 30
 API_MAX_INLINE_BYTES = 5 * 1024 * 1024
 API_LONG_POLL_MAX_SEC = 25
@@ -274,7 +274,7 @@ async def _get_instance(db: AsyncSession, job_id: int, *, refresh: bool = False)
 
 
 async def _queue_position(db: AsyncSession, instance: TaskInstance) -> int:
-    """排在该作业之前、尚未执行的 cnki 队列任务数（含优先于我们的网页任务）。"""
+    """排在该作业之前、尚未执行的 cnki 队列任务数（同优先级的更早 API 作业）。"""
     ahead = (
         await db.execute(
             select(func.count(TaskQueueItem.id)).where(

@@ -82,7 +82,7 @@ curl "http://localhost:8456/api/v1/open/metadata-jobs/<job_id>/results?format=js
   -H "Authorization: Bearer <API Key>"
 ```
 
-与网页的关系：与网页检索共用同一串行 `cnki` 队列（同一 CNKI 账号，永不并发抢登录），但 API 作业优先级低于网页任务（网页请求先出队）；`source=api` 的作业不出现在网页列表/统计中，也不触发任何通知。
+与网页的关系：与网页检索共用同一串行 `cnki` 队列（同一 CNKI 账号，永不并发抢登录），且 API 作业优先级高于网页任务（API 请求先出队）；`source=api` 的作业不出现在网页列表/统计中，也不触发任何通知。
 
 完整契约见 **[docs/开放接口文档_v1.md](docs/开放接口文档_v1.md)**（含状态机、stage 枚举、心跳判定规则、错误码、curl 全流程示例与真实链路验证记录）。
 
@@ -163,7 +163,7 @@ sdi-cnki/ (v2)
 
 | 队列 | 用途 | 并发 | 说明 |
 |------|------|------|------|
-| `cnki` | CNKI 检索 | 1 | 浏览器操作，串行；多用户任务排队等候；网页任务优先出队（API 作业 priority=10 让位） |
+| `cnki` | CNKI 检索 | 1 | 浏览器操作，串行；多用户任务排队等候；API 作业优先出队（API `priority=-1`，网页任务 `priority=0`） |
 | `llm` | LLM 分析 | 5 | API 调用 |
 | `download` | PDF 下载 | 1 | 浏览器操作，串行；同队列内逐条执行，完成后下一个用户任务才启动 |
 | `export` | 导出打包 | 2 | 文件操作 |

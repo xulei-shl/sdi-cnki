@@ -145,7 +145,7 @@ async def test_submit_creates_queued_api_job(env):
             await db.execute(select(TaskQueueItem).where(TaskQueueItem.queue_type == "cnki"))
         ).scalar_one()
         assert item.priority == API_QUEUE_PRIORITY
-        assert item.priority > 0, "API 任务优先级数值必须大于网页任务的 0，网页才优先出队"
+        assert item.priority < 0, "API 任务优先级数值必须小于网页任务的 0，API 才优先出队"
         assert json.loads(item.params_json)["instance_id"] == payload["job_id"]
 
 
