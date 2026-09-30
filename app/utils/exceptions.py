@@ -2,10 +2,18 @@ from __future__ import annotations
 
 
 class AppError(Exception):
-    def __init__(self, message: str, code: str = "INTERNAL_ERROR", status_code: int = 500):
+    def __init__(
+        self,
+        message: str,
+        code: str = "INTERNAL_ERROR",
+        status_code: int = 500,
+        headers: dict[str, str] | None = None,
+    ):
         self.message = message
         self.code = code
         self.status_code = status_code
+        # 少量错误需要附加响应头才能让调用方正确退避（如 429 的 Retry-After）
+        self.headers = headers
         super().__init__(self.message)
 
 
@@ -38,3 +46,9 @@ class DuplicateError(AppError):
 class TaskQueueError(AppError):
     def __init__(self, message: str):
         super().__init__(message=message, code="TASK_QUEUE_ERROR", status_code=500)
+
+
+class RateLimitedError(AppError):
+    def __init__(self, message: str, retry_after: int | None = None):
+        headers = {"Retry-After": str(retry_after)} if retry_after else None
+        super().__init__(message=message, code="RATE_LIMITED", status_code=429, headers=headers)

@@ -82,7 +82,7 @@ curl "http://localhost:8456/api/v1/open/metadata-jobs/<job_id>/results?format=js
   -H "Authorization: Bearer <API Key>"
 ```
 
-与网页的关系：与网页检索共用同一串行 `cnki` 队列（同一 CNKI 账号，永不并发抢登录），且 API 作业优先级高于网页任务（API 请求先出队）；`source=api` 的作业不出现在网页列表/统计中，也不触发任何通知。
+与网页的关系：与网页检索共用同一串行 `cnki` 队列（同一 CNKI 账号，永不并发抢登录），且 API 作业优先级高于网页任务（API 请求先出队）；入口限制同时在途作业数为 2（超出返回 429 `RATE_LIMITED`，带 `Retry-After`）；`source=api` 的作业不出现在网页列表/统计中，也不触发任何通知。
 
 完整契约见 **[docs/开放接口文档_v1.md](docs/开放接口文档_v1.md)**（含状态机、stage 枚举、心跳判定规则、错误码、curl 全流程示例与真实链路验证记录）。
 

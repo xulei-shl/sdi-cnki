@@ -6,7 +6,8 @@
 - 作业队列优先级高于网页任务（priority 更小），API 作业优先出队；
 - 状态接口带阶段 stage + 独立心跳 heartbeat，调用方据此区分“耗时长”与“卡死”；
 - 结果以 JSON 为主返回，原始 Excel 通过短期签名 URL 或内联下载获取；
-- 作业实例 source=api，不在网页列表/统计中展示，也不触发通知 / SSE / LLM / PDF 链路。
+- 作业实例 source=api，不在网页列表/统计中展示，也不触发通知 / SSE / LLM / PDF 链路；
+- 入口限制在途作业数，避免调用方并发提交把网页检索长时间挤在队列后面。
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ from app.utils.exceptions import (
     AppError,
     AuthenticationError,
     NotFoundError,
+    RateLimitedError,
     ValidationError,
 )
 from app.utils.logging import get_logger
@@ -61,6 +63,12 @@ API_META_TASK_NAME = "开放接口检索（内部）"
 # 数量上限固定为 100；默认沿用当前逻辑的默认值 50
 API_ALLOWED_MAX_EXPORT = (50, 100)
 API_DEFAULT_MAX_EXPORT = 50
+
+# 同时在途的 API 作业上限：cnki 队列全局串行，多提交只会排队等待，
+# 却会把网页检索挤到后面，因此在入口就把压力反馈给调用方。
+API_MAX_INFLIGHT_JOBS = 2
+# 触发限流时建议调用方退避的秒数（单次检索典型耗时 25~60s）
+API_RATE_LIMIT_RETRY_AFTER_SEC = 30
 
 # 小于网页任务的 0，使 dequeue 的 priority ASC 排序让 API 作业优先出队
 API_QUEUE_PRIORITY = -1
@@ -293,6 +301,38 @@ async def _queue_position(db: AsyncSession, instance: TaskInstance) -> int:
     return max(int(ahead) - 1, 0)
 
 
+async def _inflight_job_ids(db: AsyncSession) -> list[int]:
+    """返回仍占用 cnki 串行槽位的 API 作业 id。
+
+    以队列行为准，而非 TaskInstance.status：实例状态可能因异常遗留而长期停在
+    中间态（历史事故见 docs/changelog/20260930），若按实例计数会永久占掉配额，
+    把限流变成自我拒绝服务。队列行才是真正占据串行槽位的对象，且超时会被
+    reclaim_stale_running 回收。
+
+    识别 API 作业的依据是 priority 等于本模块入队时用的 API_QUEUE_PRIORITY
+    （网页检索入队用默认值 0）；引用同一常量可避免优先级调整后二者漂移。
+    """
+    rows = (
+        await db.execute(
+            select(TaskQueueItem.params_json).where(
+                TaskQueueItem.queue_type == "cnki",
+                TaskQueueItem.task_type == "cnki_search",
+                TaskQueueItem.priority == API_QUEUE_PRIORITY,
+                TaskQueueItem.status.in_(("pending", "retrying", "running")),
+            )
+        )
+    ).scalars().all()
+    ids: list[int] = []
+    for params_json in rows:
+        try:
+            instance_id = json.loads(params_json or "").get("instance_id")
+        except (ValueError, AttributeError):
+            continue
+        if instance_id is not None:
+            ids.append(int(instance_id))
+    return ids
+
+
 async def _estimate_remaining_seconds(db: AsyncSession, instance: TaskInstance) -> int | None:
     """按最近 10 个已完成的 API 作业均值估算剩余时间；无历史则不猜测。"""
     if not instance.started_at:
@@ -383,6 +423,17 @@ async def create_metadata_job(
             ).scalar_one_or_none()
             if instance:
                 return await _build_status(db, instance, deduplicated=True)
+
+    # 在途上限：置于幂等检查之后（同 key 重试应拿回既有作业，而不是被自家配额拒），
+    # 且置于分配流水号 / 建实例之前，保证被拒绝的请求不留任何副作用。
+    inflight = await _inflight_job_ids(db)
+    if len(inflight) >= API_MAX_INFLIGHT_JOBS:
+        listed = "、".join(f"#{i}" for i in sorted(inflight))
+        raise RateLimitedError(
+            f"在途作业已达上限 {API_MAX_INFLIGHT_JOBS} 个（{listed}）。"
+            f"请改为轮询上述已有作业，或等待 {API_RATE_LIMIT_RETRY_AFTER_SEC} 秒后再提交。",
+            retry_after=API_RATE_LIMIT_RETRY_AFTER_SEC,
+        )
 
     user, meta_task = await _get_or_create_service_actor(db)
     instance_no = await _allocate_instance_no(db)

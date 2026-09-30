@@ -139,6 +139,7 @@ async def app_error_handler(request: Request, exc: AppError):
     return JSONResponse(
         status_code=exc.status_code,
         content={"code": exc.code, "message": exc.message, "request_id": request_id_var.get("")},
+        headers=exc.headers,
     )
 
 

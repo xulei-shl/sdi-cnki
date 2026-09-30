@@ -23,7 +23,12 @@ from app.models.task_result import TaskResult
 from app.models.user import User
 from app.utils import timezone
 from app.utils.api_key import generate_api_key, verify_api_key
-from app.utils.exceptions import AuthenticationError, NotFoundError, ValidationError
+from app.utils.exceptions import (
+    AuthenticationError,
+    NotFoundError,
+    RateLimitedError,
+    ValidationError,
+)
 
 
 class _FakeRequest:
@@ -166,6 +171,176 @@ async def test_idempotency_key_returns_same_job(env):
     assert first["job_id"] == second["job_id"]
     assert second["deduplicated"] is True
     assert queued == 1
+
+
+@pytest.mark.asyncio
+async def test_inflight_cap_rejects_without_side_effects(env):
+    """在途达上限时拒绝提交，且不得新建实例/消耗流水号。"""
+    from app.routers.openapi_v1 import (
+        API_MAX_INFLIGHT_JOBS,
+        API_RATE_LIMIT_RETRY_AFTER_SEC,
+        MetadataJobRequest,
+        create_metadata_job,
+    )
+
+    async with env["factory"]() as db:
+        _, key = await _load_actors(db, env)
+        for i in range(API_MAX_INFLIGHT_JOBS):
+            await create_metadata_job(
+                MetadataJobRequest(query=f"Q{i}", idempotency_key=f"cap-{i}"), client=key, db=db
+            )
+        instances_before = (await db.execute(select(func.count(TaskInstance.id)))).scalar()
+        queued_before = (await db.execute(select(func.count(TaskQueueItem.id)))).scalar()
+
+        with pytest.raises(RateLimitedError) as exc:
+            await create_metadata_job(MetadataJobRequest(query="overflow"), client=key, db=db)
+
+        assert exc.value.status_code == 429
+        assert exc.value.code == "RATE_LIMITED"
+        assert exc.value.headers == {"Retry-After": str(API_RATE_LIMIT_RETRY_AFTER_SEC)}
+        # 消息里要给出可轮询的现有作业，否则调用方只能盲目重试
+        assert "#" in exc.value.message
+        assert str(API_MAX_INFLIGHT_JOBS) in exc.value.message
+        assert (await db.execute(select(func.count(TaskInstance.id)))).scalar() == instances_before
+        assert (await db.execute(select(func.count(TaskQueueItem.id)))).scalar() == queued_before
+
+
+@pytest.mark.asyncio
+async def test_idempotency_wins_over_inflight_cap(env):
+    """配额满时，同 idempotency_key 重试必须拿回原作业而不是 429。"""
+    from app.routers.openapi_v1 import (
+        API_MAX_INFLIGHT_JOBS,
+        MetadataJobRequest,
+        create_metadata_job,
+    )
+
+    async with env["factory"]() as db:
+        _, key = await _load_actors(db, env)
+        first = await create_metadata_job(
+            MetadataJobRequest(query="Q", idempotency_key="same"), client=key, db=db
+        )
+        for i in range(API_MAX_INFLIGHT_JOBS - 1):
+            await create_metadata_job(
+                MetadataJobRequest(query=f"X{i}", idempotency_key=f"x-{i}"), client=key, db=db
+            )
+
+        again = await create_metadata_job(
+            MetadataJobRequest(query="Q", idempotency_key="same"), client=key, db=db
+        )
+        assert again["job_id"] == first["job_id"]
+        assert again["deduplicated"] is True
+
+
+@pytest.mark.asyncio
+async def test_orphaned_instance_does_not_consume_quota(env):
+    """回归：队列行已终结但实例卡在中间态时，不得永久占掉配额。"""
+    from app.routers.openapi_v1 import (
+        API_MAX_INFLIGHT_JOBS,
+        MetadataJobRequest,
+        create_metadata_job,
+    )
+
+    async with env["factory"]() as db:
+        _, key = await _load_actors(db, env)
+        for i in range(API_MAX_INFLIGHT_JOBS):
+            await create_metadata_job(
+                MetadataJobRequest(query=f"Q{i}", idempotency_key=f"orphan-{i}"), client=key, db=db
+            )
+        # 模拟历史事故：队列行已 failed，实例却永久留在 search_queued
+        await db.execute(update(TaskQueueItem).values(status="failed"))
+        await db.commit()
+        stuck = (
+            await db.execute(
+                select(func.count(TaskInstance.id)).where(TaskInstance.status == "search_queued")
+            )
+        ).scalar()
+        assert stuck == API_MAX_INFLIGHT_JOBS, "前提：实例确实仍卡在中间态"
+
+        payload = await create_metadata_job(MetadataJobRequest(query="after-orphan"), client=key, db=db)
+        assert payload["state"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_fails_api_instance_despite_prefixed_task_key(env):
+    """回归：API 作业 task_key 是 api_<idempotency_key>，回收须靠 instance_id 定位。"""
+    from app.routers.openapi_v1 import MetadataJobRequest, create_metadata_job
+    from app.worker.recovery import reconcile_failed_task
+
+    async with env["factory"]() as db:
+        _, key = await _load_actors(db, env)
+        job_id = (
+            await create_metadata_job(
+                MetadataJobRequest(query="AI", idempotency_key="agent-run-9"), client=key, db=db
+            )
+        )["job_id"]
+        item = (await db.execute(select(TaskQueueItem))).scalar_one()
+        assert item.task_key == "api_agent-run-9", "前提：task_key 不是 instance_no"
+
+        await reconcile_failed_task(db, item.id, "Expecting value: line 1 column 1 (char 0)")
+
+        instance = (
+            await db.execute(select(TaskInstance).where(TaskInstance.id == job_id))
+        ).scalar_one()
+        assert instance.status == "failed", "API 作业失败后必须落到终态，否则调用方永远轮询不到结果"
+        assert "Expecting value" in instance.error_message
+        assert "请重新提交" in instance.error_message
+
+
+@pytest.mark.asyncio
+async def test_reconcile_keeps_web_instance_retriggerable(env):
+    """网页实例仍回退到可重试中间态，不被 API 的终态逻辑牵连。"""
+    from app.routers.openapi_v1 import MetadataJobRequest, create_metadata_job
+    from app.worker.recovery import reconcile_failed_task
+
+    async with env["factory"]() as db:
+        admin, key = await _load_actors(db, env)
+        # 复用 API 作业顺带创建的隐藏模板，避免另建完整 MetaTask
+        await create_metadata_job(MetadataJobRequest(query="AI"), client=key, db=db)
+        meta_task_id = (await db.execute(select(TaskInstance.meta_task_id))).scalar_one()
+
+        web = TaskInstance(
+            meta_task_id=meta_task_id,
+            creator_id=admin.id,
+            instance_no="T-WEB-1",
+            status="search_queued",
+            auto_run=True,
+            source="web",
+            execution_params=json.dumps({"search_params": {"query": "web"}}),
+        )
+        db.add(web)
+        await db.flush()
+        item = TaskQueueItem(
+            queue_type="cnki",
+            task_type="cnki_search",
+            task_key="T-WEB-1",
+            params_json=json.dumps({"instance_id": web.id, "instance_no": "T-WEB-1"}),
+            priority=0,
+            status="pending",
+        )
+        db.add(item)
+        await db.commit()
+        web_id = web.id
+
+        await reconcile_failed_task(db, item.id, "boom")
+        web = (await db.execute(select(TaskInstance).where(TaskInstance.id == web_id))).scalar_one()
+        assert web.status == "pending"
+        assert "可重新触发" in web.error_message
+
+
+@pytest.mark.asyncio
+async def test_app_error_handler_passes_retry_after_header():
+    """429 的 Retry-After 必须真的进响应头，而不只停在异常对象上。"""
+    from app.main import app_error_handler
+    from app.utils.exceptions import NotFoundError, RateLimitedError
+
+    resp = await app_error_handler(_FakeRequest(), RateLimitedError("too many", retry_after=30))
+    assert resp.status_code == 429
+    assert resp.headers["retry-after"] == "30"
+    assert json.loads(resp.body)["code"] == "RATE_LIMITED"
+
+    # 未携带 headers 的错误不应凭空多出响应头
+    plain = await app_error_handler(_FakeRequest(), NotFoundError("MetadataJob", 1))
+    assert "retry-after" not in plain.headers
 
 
 @pytest.mark.asyncio
