@@ -99,3 +99,7 @@ temp/
 tests/data/exports/
 /data/uploads
 *.db
+
+# 数据库备份快照（本地留档，不入库）
+*.db.bak*
+/data/backups/
