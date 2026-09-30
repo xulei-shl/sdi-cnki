@@ -503,3 +503,145 @@ async def test_api_job_does_not_trigger_llm_or_notifications():
     assert 'is_api = (instance.source or "web") == "api"' in source
     assert "if is_api:" in source
     assert "if is_api or instance.valid_data_count:" in source
+
+
+@pytest.mark.asyncio
+async def test_results_field_masking(env):
+    """测试结果字段裁剪能力：fields=core、显式字段、字段别名及非法字段校验。"""
+    from app.routers.openapi_v1 import (
+        CORE_RESULT_FIELDS,
+        MetadataJobRequest,
+        create_metadata_job,
+        get_metadata_job_results,
+    )
+
+    async with env["factory"]() as db:
+        _, key = await _load_actors(db, env)
+        job_id = (await create_metadata_job(MetadataJobRequest(query="AI"), client=key, db=db))["job_id"]
+
+        await db.execute(
+            update(TaskInstance)
+            .where(TaskInstance.id == job_id)
+            .values(status="completed")
+        )
+        db.add(
+            TaskResult(
+                task_instance_id=job_id,
+                title="人工智能论文",
+                authors="李四; 王五",
+                abstract="长摘要内容" * 50,
+                organ="清华大学",
+                source_journal="计算机学报",
+                publish_year=2026,
+                original_url="https://kns.cnki.net/test",
+                doi="10.1234/test",
+                is_duplicate=False,
+            )
+        )
+        await db.commit()
+
+        # 1. 默认无 fields：返回全部字段（含 abstract，不含 is_duplicate）
+        res_full = await get_metadata_job_results(
+            job_id, _FakeRequest(), format="json", limit=10, offset=0, inline=False, client=key, db=db
+        )
+        rec = res_full["records"][0]
+        assert "abstract" in rec
+        assert "organ" in rec
+        assert "doi" in rec
+        assert "is_duplicate" not in rec
+
+        # 2. fields=core 核心精简视图
+        res_core = await get_metadata_job_results(
+            job_id, _FakeRequest(), format="json", fields="core", limit=10, offset=0, inline=False, client=key, db=db
+        )
+        rec_core = res_core["records"][0]
+        assert set(rec_core.keys()) == set(CORE_RESULT_FIELDS)
+        assert "abstract" not in rec_core
+        assert "organ" not in rec_core
+        assert "is_duplicate" not in rec_core
+        assert rec_core["title"] == "人工智能论文"
+        assert rec_core["authors"] == "李四; 王五"
+
+        # 3. 显式指定字段
+        res_custom = await get_metadata_job_results(
+            job_id, _FakeRequest(), format="json", fields="title,authors,doi", limit=10, offset=0, inline=False, client=key, db=db
+        )
+        rec_custom = res_custom["records"][0]
+        assert set(rec_custom.keys()) == {"title", "authors", "doi"}
+
+        # 4. 字段别名 doc_id -> id
+        res_alias = await get_metadata_job_results(
+            job_id, _FakeRequest(), format="json", fields="doc_id,title", limit=10, offset=0, inline=False, client=key, db=db
+        )
+        assert set(res_alias["records"][0].keys()) == {"id", "title"}
+
+        # 5. 全无效字段报错
+        with pytest.raises(ValidationError):
+            await get_metadata_job_results(
+                job_id, _FakeRequest(), format="json", fields="invalid_foo,invalid_bar", limit=10, offset=0, inline=False, client=key, db=db
+            )
+
+
+@pytest.mark.asyncio
+async def test_results_json_file_export_and_artifact(env):
+    """测试 format=json_file 全量 JSON 导出与直链下载。"""
+    import urllib.parse
+
+    from app.routers.openapi_v1 import (
+        MetadataJobRequest,
+        create_metadata_job,
+        download_metadata_artifact,
+        get_metadata_job_results,
+    )
+
+    async with env["factory"]() as db:
+        _, key = await _load_actors(db, env)
+        job_id = (await create_metadata_job(MetadataJobRequest(query="AI"), client=key, db=db))["job_id"]
+
+        xlsx = Path(env["tmp"]) / "mock.xlsx"
+        xlsx.write_bytes(b"mock-xlsx")
+        await db.execute(
+            update(TaskInstance)
+            .where(TaskInstance.id == job_id)
+            .values(
+                status="completed",
+                search_result_file_path=str(xlsx),
+                search_result_count=2,
+            )
+        )
+        db.add(TaskResult(task_instance_id=job_id, title="第一篇", authors="张三"))
+        db.add(TaskResult(task_instance_id=job_id, title="第二篇", authors="李四"))
+        await db.commit()
+
+        # 1. format=json_file (默认 inline=False，取下载元数据)
+        json_meta = await get_metadata_job_results(
+            job_id, _FakeRequest(), format="json_file", limit=10, offset=0, inline=False, client=key, db=db
+        )
+        assert json_meta["filename"].endswith(".json")
+        assert json_meta["content_type"] == "application/json"
+        assert "token=" in json_meta["download_url"]
+        assert "type=json" in json_meta["download_url"]
+        assert json_meta["size_bytes"] > 0
+
+        # 2. 通过生成的 token 下载 json 文件
+        parsed = urllib.parse.urlparse(json_meta["download_url"])
+        qs = urllib.parse.parse_qs(parsed.query)
+        token = qs["token"][0]
+
+        file_resp = await download_metadata_artifact(
+            job_id, token=token, type="json", authorization=None, db=db
+        )
+        assert file_resp.media_type == "application/json"
+        assert Path(file_resp.path).is_file()
+        content = json.loads(Path(file_resp.path).read_text(encoding="utf-8"))
+        assert len(content) == 2
+        assert content[0]["title"] == "第一篇"
+        assert content[1]["title"] == "第二篇"
+
+        # 3. inline=True 直接内联返回文件
+        inline_resp = await get_metadata_job_results(
+            job_id, _FakeRequest(), format="json_file", limit=10, offset=0, inline=True, client=key, db=db
+        )
+        assert inline_resp.media_type == "application/json"
+        assert Path(inline_resp.path).is_file()
+

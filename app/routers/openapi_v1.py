@@ -18,6 +18,7 @@ import os
 import secrets
 import time
 from datetime import timedelta
+from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, Query, Request
@@ -78,6 +79,7 @@ API_LONG_POLL_MAX_SEC = 25
 API_KEY_LAST_USED_THROTTLE_SEC = 60
 
 EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+JSON_MEDIA_TYPE = "application/json"
 
 STATE_MAP = {
     "pending": "queued",
@@ -492,39 +494,92 @@ async def get_metadata_job(
         instance = await _get_instance(db, job_id, refresh=True)
 
 
-def _serialize_result(row: TaskResult) -> dict:
-    return {
-        "id": row.id,
-        "title": row.title,
-        "authors": row.authors,
-        "organ": row.organ,
-        "source_journal": row.source_journal,
-        "first_duty": row.first_duty,
-        "keywords": row.keywords,
-        "abstract": row.abstract,
-        "publish_time": row.publish_time,
-        "fund": row.fund,
-        "publish_year": row.publish_year,
-        "volume": row.volume,
-        "issue": row.issue,
-        "pages": row.pages,
-        "clc": row.clc,
-        "issn": row.issn,
-        "original_url": row.original_url,
-        "doi": row.doi,
-        "reference_format": row.reference_format,
-        "is_duplicate": row.is_duplicate,
-    }
+ALL_RESULT_FIELDS = (
+    "id",
+    "title",
+    "authors",
+    "organ",
+    "source_journal",
+    "first_duty",
+    "keywords",
+    "abstract",
+    "publish_time",
+    "fund",
+    "publish_year",
+    "volume",
+    "issue",
+    "pages",
+    "clc",
+    "issn",
+    "original_url",
+    "doi",
+    "reference_format",
+)
+
+CORE_RESULT_FIELDS = (
+    "id",
+    "title",
+    "authors",
+    "source_journal",
+    "publish_year",
+    "original_url",
+)
+
+FIELD_ALIASES = {"doc_id": "id"}
+
+
+def _parse_selected_fields(fields: str | None) -> tuple[str, ...] | None:
+    """解析 fields 参数：支持 'core' 预设视图、逗号分隔字段名及常见别名（如 doc_id）。"""
+    if not isinstance(fields, str):
+        return None
+    cleaned = fields.strip().lower()
+    if cleaned == "core":
+        return CORE_RESULT_FIELDS
+    raw_tokens = [f.strip() for f in fields.split(",") if f.strip()]
+    mapped = [FIELD_ALIASES.get(t, t) for t in raw_tokens]
+    selected = [f for f in mapped if f in ALL_RESULT_FIELDS]
+    if not selected:
+        raise ValidationError(
+            f"无效的 fields 字段。可选字段包括：{', '.join(ALL_RESULT_FIELDS)} 或预设视图 'core'"
+        )
+    return tuple(dict.fromkeys(selected))
+
+
+def _serialize_result(row: TaskResult, selected_fields: tuple[str, ...] | None = None) -> dict:
+    fields = selected_fields or ALL_RESULT_FIELDS
+    return {k: getattr(row, k) for k in fields}
+
+
+async def _ensure_json_file(instance: TaskInstance, db: AsyncSession) -> Path:
+    """确保全量元数据 JSON 文件已在本地磁盘生成并缓存。"""
+    if instance.search_result_file_path:
+        json_path = Path(instance.search_result_file_path).with_suffix(".json")
+    else:
+        json_path = Path(settings.exports_dir) / f"cnki_metadata_{instance.instance_no}.json"
+
+    if not json_path.is_file():
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        rows = (
+            await db.execute(
+                select(TaskResult)
+                .where(TaskResult.task_instance_id == instance.id)
+                .order_by(TaskResult.id)
+            )
+        ).scalars().all()
+        data = [_serialize_result(r) for r in rows]
+        json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return json_path
 
 
 @router.get("/metadata-jobs/{job_id}/results")
 async def get_metadata_job_results(
     job_id: int,
     request: Request,
-    format: Literal["json", "excel"] = Query("json"),
+    format: Literal["json", "excel", "json_file"] = Query("json"),
+    fields: Optional[str] = Query(None, description="字段裁剪：预设 'core' 或以逗号分隔具体字段列表"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    inline: bool = Query(False, description="format=excel 时是否直接内联返回文件（受体积上限约束）"),
+    inline: bool = Query(False, description="format 为 excel/json_file 时是否直接内联返回文件（受体积上限约束）"),
     client: ApiKey = Depends(get_api_client),
     db: AsyncSession = Depends(get_db),
 ):
@@ -532,9 +587,13 @@ async def get_metadata_job_results(
     if instance.status not in RESULT_READY_STATES:
         raise ValidationError(f"作业尚未产出结果，当前状态：{instance.status}")
 
-    if format == "excel":
+    res_format = format if isinstance(format, str) else "json"
+    if res_format == "excel":
         return _excel_payload(instance, request, inline)
+    if res_format == "json_file":
+        return await _json_file_payload(instance, request, inline, db)
 
+    selected_fields = _parse_selected_fields(fields)
     total = (
         await db.execute(select(func.count(TaskResult.id)).where(TaskResult.task_instance_id == job_id))
     ).scalar() or 0
@@ -556,7 +615,7 @@ async def get_metadata_job_results(
         "offset": offset,
         "limit": limit,
         "next_offset": next_offset if next_offset < total else None,
-        "records": [_serialize_result(r) for r in rows],
+        "records": [_serialize_result(r, selected_fields) for r in rows],
     }
 
 
@@ -588,10 +647,37 @@ def _excel_payload(instance: TaskInstance, request: Request, inline: bool):
     }
 
 
+async def _json_file_payload(instance: TaskInstance, request: Request, inline: bool, db: AsyncSession):
+    json_path = await _ensure_json_file(instance, db)
+    filename = f"cnki_metadata_{instance.instance_no}.json"
+    size = json_path.stat().st_size
+    if inline:
+        if size > API_MAX_INLINE_BYTES:
+            raise AppError(
+                f"JSON 文件 {size} 字节超过内联上限 {API_MAX_INLINE_BYTES}，请改用 download_url 下载",
+                code="PAYLOAD_TOO_LARGE",
+                status_code=413,
+            )
+        return FileResponse(str(json_path), filename=filename, media_type=JSON_MEDIA_TYPE)
+
+    token = create_artifact_token(instance.id, API_ARTIFACT_TOKEN_TTL_MIN)
+    base = str(request.base_url).rstrip("/")
+    return {
+        "job_id": instance.id,
+        "job_no": instance.instance_no,
+        "filename": filename,
+        "size_bytes": size,
+        "content_type": JSON_MEDIA_TYPE,
+        "download_url": f"{base}/api/v1/open/metadata-jobs/{instance.id}/artifact?token={token}&type=json",
+        "expires_at": (timezone.now() + timedelta(minutes=API_ARTIFACT_TOKEN_TTL_MIN)).isoformat(),
+    }
+
+
 @router.get("/metadata-jobs/{job_id}/artifact")
 async def download_metadata_artifact(
     job_id: int,
     token: Optional[str] = Query(None, description="短期签名令牌，可脱离 API Key 使用"),
+    type: Literal["excel", "json"] = Query("excel", description="制品文件类型：excel 或 json"),
     authorization: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -601,6 +687,15 @@ async def download_metadata_artifact(
         await verify_api_key_header(authorization, db)
 
     instance = await _get_instance(db, job_id)
+    artifact_type = type if isinstance(type, str) else "excel"
+    if artifact_type == "json":
+        json_path = await _ensure_json_file(instance, db)
+        return FileResponse(
+            str(json_path),
+            filename=f"cnki_metadata_{instance.instance_no}.json",
+            media_type=JSON_MEDIA_TYPE,
+        )
+
     path = instance.search_result_file_path
     if not path or not os.path.isfile(path):
         raise NotFoundError("元数据 Excel 文件", instance.instance_no)
