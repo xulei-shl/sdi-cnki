@@ -48,18 +48,29 @@ async def get_download_progress_stats(db: AsyncSession, instance_id: int) -> dic
     return {"success": success, "failed": failed, "total": total}
 
 
-async def resolve_review_status(db: AsyncSession, instance_id: int) -> str:
-    """分析/下载阶段结束后，实例应处的状态（由数据派生，不看操作顺序）。
+async def resolve_review_status(
+    db: AsyncSession, instance, stats: dict | None = None
+) -> str:
+    """审核/下载阶段结束后，实例应处的状态（由数据派生，不看操作顺序）。
 
+    - 无有效数据（全部为重复）→ 无事可做：completed
     - 没有「审核通过的非重复记录」→ 仍待人工审核：analyzing_completed
     - 审核通过的全部已下载成功 → 已完成：completed
     - 其余（部分成功/部分失败）→ 待人工处理：analyzing_completed
 
     调用方**必须**用它代替硬编码状态：实例状态是派生值，而“是否已终态”这条
-    规则过去由各 worker 各自实现，导致「对已完成实例重跑分析」被写成
-    analyzing_completed，把终态打回审核中（见 tasks/lessons.md）。
+    规则过去由各 worker 各自实现，于是出现两类异常（见 tasks/lessons.md）：
+    1. 「对已完成实例重跑分析」被写成 analyzing_completed，把终态打回审核中；
+    2. 同一份数据（部分记录下载失败）在“批量刚跑完”分支被判为 completed，
+       在“重跑时无待下载记录”分支却被判为 analyzing_completed——
+       状态取决于用户点了几次下载。
+
+    `stats` 可选：调用方已查过时传入，避免重复查询。
     """
-    stats = await get_download_progress_stats(db, instance_id)
+    if not (instance.valid_data_count or 0):
+        return "completed"
+    if stats is None:
+        stats = await get_download_progress_stats(db, instance.id)
     if stats["total"] > 0 and stats["success"] >= stats["total"]:
         return "completed"
     return "analyzing_completed"

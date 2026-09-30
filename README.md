@@ -177,6 +177,9 @@ pending → running → search_completed → analyzing
 
 任意阶段失败 → `failed`，通过 SSE 和企微 Webhook（按账号独立配置）即时通知。
 
+`analyzing_completed`（页面显示「审核中」）是**待人工审核**的停靠态：审核通过记录尚未全部下载成功时都会停在这里，包括下载有失败记录的情况（可逐条重试下载）。
+终态 `completed` 的判定由数据决定（`app/services/download_progress.py:resolve_review_status`）：无有效数据，或审核通过的非重复记录已全部下载成功。
+
 ## 生产部署（Ubuntu + systemd）
 
 详见 `Ubuntu部署说明.md`，关键步骤概览：

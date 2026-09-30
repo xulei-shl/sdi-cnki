@@ -112,7 +112,7 @@ async def run_llm_analysis(
 
         # 状态按数据派生，不能写死：对“审核通过的部分已全部下载成功”的实例重跑分析时，
         # 写死 analyzing_completed 会把终态 completed 打回审核中（历史事故见 tasks/lessons.md）。
-        instance.status = await resolve_review_status(db, instance_id)
+        instance.status = await resolve_review_status(db, instance)
         instance.analysis_completed_at = timezone.now()
         if instance.status == "completed" and not instance.completed_at:
             instance.completed_at = timezone.now()
@@ -363,7 +363,7 @@ async def _finish_with_no_data(
     item_id: int,
     instance_id: int,
 ) -> None:
-    instance.status = await resolve_review_status(db, instance_id)
+    instance.status = await resolve_review_status(db, instance)
     instance.analysis_completed_at = timezone.now()
     if instance.status == "completed" and not instance.completed_at:
         instance.completed_at = timezone.now()

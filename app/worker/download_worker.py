@@ -17,7 +17,7 @@ from app.models.task_instance import TaskInstance
 from app.models.task_result import TaskResult
 from app.models.download_result import DownloadResult
 from app.services.pdf_downloader import download_pdf
-from app.services.download_progress import get_download_progress_stats
+from app.services.download_progress import get_download_progress_stats, resolve_review_status
 from app.task_queue.crud import TaskQueueService
 from app.utils.logging import get_logger
 
@@ -83,26 +83,19 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
         total = len(records)
 
         if not records:
-            # 无待下载记录：不能“假完成”，按原因区分处理。
+            # 无待下载记录：不能“假完成”。状态判定复用统一入口（与“批量刚跑完”同规则），
+            # 避免同一份数据只因用户点了几次下载而得出不同状态；错误提示按原因区分。
             stats = await get_download_progress_stats(db, instance_id)
-            approved_cnt = stats["total"]
-            completed_cnt = stats["success"]
-            if (instance.valid_data_count or 0) == 0:
-                # 无有效数据 → 视为完成
-                instance.status = "completed"
-                instance.completed_at = timezone.now()
-            elif approved_cnt == 0:
-                # 有数据但均未人工审核通过：停留审核态，提示先标记通过
-                instance.status = "analyzing_completed"
-                instance.error_message = "无可下载记录：请先在页面完成人工审核（标记通过）后再触发下载"
-            elif completed_cnt >= approved_cnt:
-                # 审核通过的记录已全部下载成功 → 任务完成
-                instance.status = "completed"
+            instance.status = await resolve_review_status(db, instance, stats)
+            if instance.status == "completed":
+                # 无有效数据，或审核通过的记录已全部下载成功
                 instance.completed_at = timezone.now()
                 instance.error_message = None
+            elif stats["total"] == 0:
+                # 有数据但均未人工审核通过：提示先标记通过
+                instance.error_message = "无可下载记录：请先在页面完成人工审核（标记通过）后再触发下载"
             else:
-                # 剩余记录均已标记下载失败：停留审核态，行级“下载”按钮可单独重试
-                instance.status = "analyzing_completed"
+                # 剩余记录均已标记下载失败：行级“下载”按钮可单独重试
                 instance.error_message = "无可下载记录：剩余记录均已标记下载失败，可在表格行级点“下载”按钮单独重试"
             await db.commit()
             await svc.complete(item_id, '{"status": "completed", "downloaded": 0}')
@@ -200,9 +193,14 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
                 f"Download progress {instance_no}: {stats['success'] + stats['failed']}/{stats['total']}"
             )
 
-        instance.status = "completed"
-        instance.completed_at = timezone.now()
-        instance.error_message = None  # 清除历史错误/超时回收提示，避免残留展示
+        # 状态由数据派生（与“无待下载记录”分支同规则）：全部成功才算完成；
+        # 有失败则留在审核态并提示行级重试，否则会把“43 成功 / 178 失败”也报成已完成。
+        instance.status = await resolve_review_status(db, instance)
+        if instance.status == "completed":
+            instance.completed_at = timezone.now()
+            instance.error_message = None  # 清除历史错误/超时回收提示，避免残留展示
+        else:
+            instance.error_message = "部分记录下载失败，可在表格行级点“下载”按钮单独重试"
         await db.commit()
 
         await svc.complete(item_id, json.dumps({
@@ -214,7 +212,7 @@ async def run_download(db: AsyncSession, item_id: int, params_json: str) -> None
 
         await broadcast_event(instance_id, "download.progress", await get_download_progress_stats(db, instance_id))
         await broadcast_event(instance_id, "task.completed", {
-            "status": "completed", "completed_at": timezone.now().isoformat(),
+            "status": instance.status, "completed_at": timezone.now().isoformat(),
         })
 
         from app.services.notification import send_notification
