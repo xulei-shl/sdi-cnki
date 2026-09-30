@@ -1,8 +1,9 @@
-"""下载进度统计（累计口径，实例视角，跨运行累计）。
+"""下载进度统计（累计口径，实例视角，跨运行累计）+ 由其派生的实例终态判定。
 
-供两个调用方复用，保证“同口径”：
+供多个调用方复用，保证“同口径”：
 - GET /task-instances/{id}/download-progress 接口
 - download_worker 每批下载完成后的 download.progress 广播
+- resolve_review_status：分析/下载阶段结束后实例该处于什么状态
 
 口径说明：
 total = 本实例人工审核通过的非重复记录数（已成功的记录也计入 total，
@@ -45,3 +46,20 @@ async def get_download_progress_stats(db: AsyncSession, instance_id: int) -> dic
             # skipped 已合并进 failed（下载状态精简），保留对旧数据的兼容
             failed += cnt
     return {"success": success, "failed": failed, "total": total}
+
+
+async def resolve_review_status(db: AsyncSession, instance_id: int) -> str:
+    """分析/下载阶段结束后，实例应处的状态（由数据派生，不看操作顺序）。
+
+    - 没有「审核通过的非重复记录」→ 仍待人工审核：analyzing_completed
+    - 审核通过的全部已下载成功 → 已完成：completed
+    - 其余（部分成功/部分失败）→ 待人工处理：analyzing_completed
+
+    调用方**必须**用它代替硬编码状态：实例状态是派生值，而“是否已终态”这条
+    规则过去由各 worker 各自实现，导致「对已完成实例重跑分析」被写成
+    analyzing_completed，把终态打回审核中（见 tasks/lessons.md）。
+    """
+    stats = await get_download_progress_stats(db, instance_id)
+    if stats["total"] > 0 and stats["success"] >= stats["total"]:
+        return "completed"
+    return "analyzing_completed"

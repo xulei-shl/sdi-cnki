@@ -1,5 +1,24 @@
 # 经验教训
 
+## 2026-09-30: 重跑分析把已完成实例打回「审核中」
+
+### Bug: `completed` 终态被后续分析覆盖（实例 T20260830002）
+- **现象**: 实例 7 条审核通过记录已全部下载成功，本应 `completed`，页面上却永久显示「审核中」。
+- **根因**: 实例状态是**派生值**（由 `task_results` / `download_results` 算出），却被 7 个文件里 20 余处代码各自直接赋值。其中 `app/worker/llm_worker.py` 的成功分支**写死** `instance.status = "analyzing_completed"`，而 `retry-analysis` 端点允许对 `completed` 实例重跑（前端 `canRetryAnalysis` 也把 `completed` 列进去了）——于是“重跑分析”把终态打回中间态。
+- **证据链**: 批量下载队列行 269 于 `09:42:50` 完成（`completed_cnt >= approved_cnt` → 应置 `completed`）→ `09:52:43` 重跑分析（队列行 292）→ `09:52:47` 写完，`analysis_completed_at` 与之完全吻合，状态 = `analyzing_completed`。
+- **教训**: “是否已终态”这条规则不能由每个 worker 各自实现。凡是在审核/下载阶段结束时决定实例状态的路径，**必须**复用数据派生的 `app/services/download_progress.py:resolve_review_status()`，不得写死常量。新增此类路径时同样适用。
+- **验证方式**: `tests/test_review_status.py` 钉死该不变量；已反向验证（把判定退回“写死常量”后用例确实失败）。
+
+### 不是 Bug: 行级「下载」按钮不修改实例状态
+- **约定**: `POST /{instance_id}/results/{result_id}/retry-download` **有意**不修改实例状态（见 2026-05-18 条目）。
+- **由此产生的正常现象**: 用户逐条下载完所有已通过记录、但从未点过批量「下载」时，实例会一直停在「审核中」，`download_started_at` 为 `NULL`（实例 T20260608002 即如此）。这是操作顺序问题，**不要**为此把行级下载改成会推进终态——那会让实例变 `completed`，而前端 `isEditableStatus` 只含 `analyzing_completed`/`downloading`，「下载」与审核入口会随之消失，反而锁死用户。
+
+## 2026-09-30: API 作业在队列层失败后实例永久卡在 search_queued
+
+### Bug: 业务对象回收靠 `task_key` 反查实例，而 task_key 被覆盖
+- **根因**: `app/worker/recovery.py` 的 cnki 分支把 `row.task_key` 直接当 `instance_no` 用，但开放接口带 `idempotency_key` 时入队的 `task_key` 是 `api_<idempotency_key>`，查找必然落空并静默返回。
+- **教训**: 反查业务对象应优先用 `params_json.instance_id` 这类**强标识**，`task_key` 是“队列去重键”而非“业务主键”，两者语义不同，不能混用。
+
 ## 2026-05-18: 下载步骤中无 URL 的已通过记录被静默跳过
 
 ### Bug: 下载工作线程过滤条件导致 4 条记录永久"未下载"

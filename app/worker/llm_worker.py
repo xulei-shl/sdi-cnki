@@ -17,6 +17,7 @@ from app.models.prompt_template import PromptTemplate
 from app.models.system_prompt import SystemPrompt
 from app.models.task_instance import TaskInstance
 from app.models.task_result import TaskResult
+from app.services.download_progress import resolve_review_status
 from app.services.json_parser import parse_llm_json
 from app.services.llm_provider import call_llm_with_retry
 from app.task_queue.crud import TaskQueueService
@@ -109,13 +110,17 @@ async def run_llm_analysis(
             })
             logger.info(f"LLM progress: {analyzed}/{total} analyzed, {failed} failed")
 
-        instance.status = "analyzing_completed"
+        # 状态按数据派生，不能写死：对“审核通过的部分已全部下载成功”的实例重跑分析时，
+        # 写死 analyzing_completed 会把终态 completed 打回审核中（历史事故见 tasks/lessons.md）。
+        instance.status = await resolve_review_status(db, instance_id)
         instance.analysis_completed_at = timezone.now()
+        if instance.status == "completed" and not instance.completed_at:
+            instance.completed_at = timezone.now()
         await db.commit()
 
         await svc.complete(item_id, json.dumps({"analyzed": analyzed, "failed": failed}))
         await broadcast_event(instance_id, "task.completed", {
-            "status": "analyzing_completed",
+            "status": instance.status,
             "analyzed": analyzed,
             "total": total,
             "failed": failed,
@@ -358,15 +363,17 @@ async def _finish_with_no_data(
     item_id: int,
     instance_id: int,
 ) -> None:
-    instance.status = "analyzing_completed"
+    instance.status = await resolve_review_status(db, instance_id)
     instance.analysis_completed_at = timezone.now()
+    if instance.status == "completed" and not instance.completed_at:
+        instance.completed_at = timezone.now()
     await db.commit()
 
     await svc.complete(item_id, '{"analyzed": 0, "failed": 0}')
 
     from app.routers.sse import broadcast_event
     await broadcast_event(instance_id, "task.completed", {
-        "status": "analyzing_completed",
+        "status": instance.status,
         "analyzed": 0,
         "total": 0,
         "failed": 0,
