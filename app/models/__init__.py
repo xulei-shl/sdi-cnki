@@ -10,6 +10,7 @@ from app.models.meta_task_llm_config import MetaTaskLlmConfig
 from app.models.task_instance import TaskInstance
 from app.models.task_result import TaskResult
 from app.models.llm_analysis_result import LlmAnalysisResult
+from app.models.jev_score import JevScore
 from app.models.download_result import DownloadResult
 from app.models.pdf_file import PdfFile
 from app.models.operation_log import OperationLog

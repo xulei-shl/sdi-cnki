@@ -11,6 +11,7 @@ worker 在真正开始执行业务逻辑之前（如解析 params_json 失败、
 - export   : key = export_{instance_no}_{export_id} -> export_task -> failed
 - cnki     : key = {instance_no}                     -> search_queued -> pending
 - llm      : key = llm_{instance_no} / llm_retry_*   -> analyzing -> analyzing_completed
+- jev      : key = jev_{instance_no}                 -> search_completed -> completed（相关性失败不影响文献交付）
 - download : key = download_{instance_no}            -> download_queued -> analyzing_completed
 
 定位业务对象时以 `params_json.instance_id` 为准，`task_key` 仅作兜底：开放接口带
@@ -45,7 +46,16 @@ def _extract_instance_id(params_json: str | None) -> int | None:
 
 
 async def reconcile_failed_task(db: AsyncSession, item_id: int, error_message: str) -> None:
-    """根据队列行类型回退关联业务对象状态（幂等，仅处理中间态）。"""
+    """根据队列行类型回退关联业务对象状态（幂等，仅处理中间态）。
+
+    两条失败路径都必须走这里，否则业务对象会悬在中间态：
+    1. worker 执行中抛错（`BaseWorker._process_wrapper` 捕获后调用）；
+    2. worker 进程崩溃导致队列行超时被回收（`reclaim_stale_running` 调用）。
+
+    第 2 条尤其关键：`reclaim_stale_running` 只把队列行标记为 failed，并**不会**
+    触发本函数。若 jev 评分期间进程重启，实例会永久停在 `search_completed`
+    （对外映射 `running`），调用方永远轮询不到终态——与 20260930 的 cnki 事故同类。
+    """
     row = (
         await db.execute(select(TaskQueueItem).where(TaskQueueItem.id == item_id))
     ).scalar_one_or_none()
@@ -64,6 +74,8 @@ async def reconcile_failed_task(db: AsyncSession, item_id: int, error_message: s
             await _reconcile_instance(db, instance_no, ("analyzing", "search_completed"), "analyzing_completed", error_message, "分析", instance_id)
         elif row.queue_type == "cnki":
             await _reconcile_instance(db, key, ("search_queued",), "pending", error_message, "检索", instance_id)
+        elif row.queue_type == "jev":
+            await _reconcile_jev(db, key, error_message, instance_id)
     except Exception as e:
         logger.error(f"Reconcile failed for task item {item_id}: {e}", exc_info=True)
 
@@ -97,6 +109,42 @@ async def _reconcile_instance(
     inst.error_message = f"{stage}任务执行失败：{error_message[:500]}{suffix}"
     await db.commit()
     logger.warning(f"Reconciled instance {inst.instance_no}: {to_status}（{error_message[:200]}）")
+
+
+async def _reconcile_jev(db: AsyncSession, key: str, error_message: str, instance_id: int | None) -> None:
+    """JEV 评分任务失败的兜底：置终态 completed，而非 failed。
+
+    这是本模块唯一**刻意偏离**「API 作业失败一律回收到 failed」口径的分支。
+    cnki/llm 失败时业务对象本就没有产出，打成终态失败是对的；但 JEV 跑在检索
+    **之后**，此时文献已入库、counts 已可读。若打成 failed，调用方既拿不到
+    50~100 条已检索到的元数据，也拿不到分数——一次成功的 CNKI 检索被彻底丢弃，
+    而失败原因仅仅是相关性判断这一可选增值环节出了问题。
+
+    因此这里落到 `completed`（作业成功），并用 relevance_status='failed' 如实
+    记录评分失败；调用方能从状态块看出「文献拿到了，但没打分」。
+    """
+    inst = None
+    if instance_id is not None:
+        inst = (
+            await db.execute(select(TaskInstance).where(TaskInstance.id == instance_id))
+        ).scalar_one_or_none()
+    if inst is None and key.startswith("jev_"):
+        inst = (
+            await db.execute(
+                select(TaskInstance).where(TaskInstance.instance_no == key[len("jev_"):])
+            )
+        ).scalar_one_or_none()
+    if not inst or inst.status in ("completed", "failed"):
+        return
+
+    inst.relevance_status = "failed"
+    inst.relevance_error = f"相关性评分任务执行失败：{error_message[:300]}"
+    inst.status = "completed"
+    inst.completed_at = timezone.now()
+    await db.commit()
+    logger.warning(
+        f"Reconciled instance {inst.instance_no} -> completed (relevance failed): {error_message[:200]}"
+    )
 
 
 async def _reconcile_export(db: AsyncSession, key: str, error_message: str) -> None:

@@ -6,6 +6,7 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Select } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { getLlmConfigs, createLlmConfig, updateLlmConfig, deleteLlmConfig, testLlmConfig, testLlmConfigById, invalidateLlmConfigsCache } from '@/api/llm-configs'
 import type { LlmConfig } from '@/types'
@@ -23,7 +24,13 @@ export default function LlmConfigPage() {
   const [modelName, setModelName] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [apiEndpoint, setApiEndpoint] = useState('')
+  const [configType, setConfigType] = useState<'llm' | 'jev'>('llm')
   const [isActive, setIsActive] = useState(true)
+
+  const isJev = configType === 'jev'
+  const JEV_ENDPOINT_PLACEHOLDER = 'https://api.typesafe.ai/v1/systemone'
+  const endpointPlaceholder = isJev ? JEV_ENDPOINT_PLACEHOLDER : 'https://api.openai.com/v1'
+  const modelPlaceholder = isJev ? 'jev-latest' : 'gpt-4o'
 
   const fetchData = async (opts?: { fresh?: boolean }) => {
     if (opts?.fresh) invalidateLlmConfigsCache()
@@ -44,6 +51,7 @@ export default function LlmConfigPage() {
     setModelName('')
     setApiKey('')
     setApiEndpoint('')
+    setConfigType('llm')
     setIsActive(true)
     setDialogOpen(true)
   }
@@ -54,8 +62,16 @@ export default function LlmConfigPage() {
     setModelName(item.model_name)
     setApiKey('')
     setApiEndpoint(item.api_endpoint)
+    setConfigType(item.config_type || 'llm')
     setIsActive(item.is_active)
     setDialogOpen(true)
+  }
+
+  // 切换类型时清空端点/模型：两者的默认值不同，留着上一个的值极易误保存
+  const switchConfigType = (next: 'llm' | 'jev') => {
+    setConfigType(next)
+    setApiEndpoint('')
+    setModelName(next === 'jev' ? 'jev-latest' : '')
   }
 
   const handleSave = async () => {
@@ -67,6 +83,7 @@ export default function LlmConfigPage() {
         name: name.trim(),
         model_name: modelName.trim(),
         api_endpoint: apiEndpoint.trim(),
+        config_type: configType,
         is_active: isActive,
       }
       if (apiKey) data.api_key = apiKey
@@ -111,6 +128,7 @@ export default function LlmConfigPage() {
           model_name: modelName.trim(),
           api_endpoint: apiEndpoint.trim(),
           api_key: apiKey,
+          config_type: configType,
         })
       }
       toast.success('连接成功')
@@ -145,6 +163,7 @@ export default function LlmConfigPage() {
           <TableHeader>
             <TableRow>
               <TableHead>名称</TableHead>
+              <TableHead>类型</TableHead>
               <TableHead>模型名称</TableHead>
               <TableHead>API 端点</TableHead>
               <TableHead>状态</TableHead>
@@ -154,12 +173,17 @@ export default function LlmConfigPage() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
             ) : configs.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">暂无配置</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">暂无配置</TableCell></TableRow>
             ) : configs.map((cfg) => (
               <TableRow key={cfg.id}>
                 <TableCell className="font-medium">{cfg.name}</TableCell>
+                <TableCell>
+                  <Badge variant={cfg.config_type === 'jev' ? 'info' : 'outline'}>
+                    {cfg.config_type === 'jev' ? 'JEV 评分' : 'LLM'}
+                  </Badge>
+                </TableCell>
                 <TableCell>{cfg.model_name}</TableCell>
                 <TableCell className="max-w-[200px] truncate text-muted-foreground">{cfg.api_endpoint}</TableCell>
                 <TableCell>
@@ -188,12 +212,22 @@ export default function LlmConfigPage() {
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1">
+              <Label>类型 <span className="text-destructive">*</span></Label>
+              <Select
+                value={configType}
+                onChange={(e) => switchConfigType(e.target.value as 'llm' | 'jev')}
+              >
+                <option value="llm">LLM（OpenAI 兼容对话补全）</option>
+                <option value="jev">JEV 评分（TypeSafe 相关性判断）</option>
+              </Select>
+            </div>
+            <div className="space-y-1">
               <Label>名称 <span className="text-destructive">*</span></Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="如 GPT-4o" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={isJev ? '如 TypeSafe 评分' : '如 GPT-4o'} />
             </div>
             <div className="space-y-1">
               <Label>模型名称 <span className="text-destructive">*</span></Label>
-              <Input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder="如 gpt-4o" />
+              <Input value={modelName} onChange={(e) => setModelName(e.target.value)} placeholder={modelPlaceholder} />
             </div>
             <div className="space-y-1">
               <Label>API Key {!editItem && <span className="text-destructive">*</span>}</Label>
@@ -201,7 +235,7 @@ export default function LlmConfigPage() {
             </div>
             <div className="space-y-1">
               <Label>API 端点 <span className="text-destructive">*</span></Label>
-              <Input value={apiEndpoint} onChange={(e) => setApiEndpoint(e.target.value)} placeholder="https://api.openai.com/v1" />
+              <Input value={apiEndpoint} onChange={(e) => setApiEndpoint(e.target.value)} placeholder={endpointPlaceholder} />
             </div>
             <div className="flex items-center gap-2">
               <Switch checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />

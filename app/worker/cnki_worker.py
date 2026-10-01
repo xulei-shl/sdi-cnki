@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
-from app.database import async_session_factory
 from app.models.meta_task import MetaTask
 from app.models.task_instance import TaskInstance
 from app.models.task_result import TaskResult
@@ -25,6 +24,7 @@ from app.services.excel_parser import parse_excel_to_records, CNKI_COLUMN_MAP
 from app.services.dedup_service import batch_check_and_mark
 from app.task_queue.crud import TaskQueueService
 from app.utils.logging import get_logger
+from app.worker.progress import save_progress as _save_progress, with_heartbeat as _with_heartbeat
 
 logger = get_logger("cnki_worker")
 settings = get_settings()
@@ -32,72 +32,14 @@ settings = get_settings()
 # Maximum valid data count to auto-trigger LLM analysis (0 = always trigger)
 MAX_AUTO_LLM_TRIGGER = 2000
 
-# 心跳间隔：与浏览器步骤解耦，让调用方能区分“步骤耗时”与“进程卡死”
-HEARTBEAT_INTERVAL_SEC = 5
+# JEV 相关性评分队列的作业超时：50~100 篇按批打分，批间串行等待上游推理
+JEV_TIMEOUT_SEC = 1800
 
 # 检索专用单线程 executor：与默认线程池（PDF 下载的 to_thread）隔离，
 # 避免 Playwright sync dispatcher loop 泄漏后跨任务污染（详见 20260929 changelog）。
 _search_executor = __import__("concurrent.futures", fromlist=["ThreadPoolExecutor"]).ThreadPoolExecutor(
     max_workers=1, thread_name_prefix="cnki-search",
 )
-
-STAGE_MESSAGES: dict[str, str] = {
-    "launching": "正在启动浏览器",
-    "navigating": "正在打开检索页面",
-    "authenticating": "正在校验登录状态",
-    "searching": "正在填写检索条件",
-    "submitting": "正在提交检索",
-    "waiting_results": "已提交检索，正在等待结果页返回",
-    "collecting": "正在读取检索结果数量",
-    "exporting": "正在分批导出元数据",
-    "merging": "正在合并导出批次",
-    "parsing": "正在解析元数据并入库",
-    "done": "检索完成",
-}
-
-
-async def _save_progress(instance_id: int, stage: str, extra: dict | None = None) -> None:
-    """把检索阶段写入任务实例，供开放接口轮询（跨进程可见）。"""
-    extra = extra or {}
-    try:
-        async with async_session_factory() as db:
-            await db.execute(
-                update(TaskInstance)
-                .where(TaskInstance.id == instance_id)
-                .values(
-                    progress_stage=stage,
-                    progress_message=STAGE_MESSAGES.get(stage, stage),
-                    progress_current=extra.get("current"),
-                    progress_total=extra.get("total"),
-                    heartbeat_at=timezone.now(),
-                )
-            )
-            await db.commit()
-    except Exception as e:
-        # 进度上报属于可观测性，失败不能影响检索本身
-        logger.warning(f"progress update failed (instance={instance_id}, stage={stage}): {e}")
-
-
-async def _touch_heartbeat(instance_id: int) -> None:
-    try:
-        async with async_session_factory() as db:
-            await db.execute(
-                update(TaskInstance)
-                .where(TaskInstance.id == instance_id)
-                .values(heartbeat_at=timezone.now())
-            )
-            await db.commit()
-    except Exception as e:
-        logger.warning(f"heartbeat update failed (instance={instance_id}): {e}")
-
-
-async def _heartbeat_loop(instance_id: int, stop: asyncio.Event) -> None:
-    """独立心跳：即使某个浏览器步骤长时间不推进，心跳也在走。"""
-    while not stop.is_set():
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=HEARTBEAT_INTERVAL_SEC)
-        except asyncio.TimeoutError:
-            await _touch_heartbeat(instance_id)
 
 
 def _extract_queries(params: dict) -> list[str]:
@@ -247,6 +189,56 @@ async def process_search_results(
     )
 
 
+async def _dispatch_api_relevance(
+    db: AsyncSession,
+    svc: TaskQueueService,
+    instance: TaskInstance,
+    exec_params: dict,
+) -> None:
+    """检索完成后收尾 API 作业：按需入队 JEV 评分，否则直接置终态。
+
+    关键语义：实例**不能**在这里置 completed。
+    调用方（开放接口）的契约是「拿到终态即代表相关性判断已结束」，否则轮询会在
+    JEV 仍在跑时提前看到 succeeded，拿到一批 relevance_score 全为 null 的记录。
+    因此有相关性判断时把实例停在 search_completed（对外映射为 running），
+    由 jev_worker 收尾时再置 completed；入队失败也必须落到终态，否则调用方永远轮询不到。
+    """
+    relevance = exec_params.get("relevance") or {}
+    enabled = bool(relevance.get("enabled", True))
+    has_data = bool(instance.valid_data_count)
+
+    if not enabled or not has_data:
+        instance.status = "completed"
+        instance.completed_at = timezone.now()
+        if enabled and not has_data:
+            # 请求了判断但无文献可判：不是错误，如实记为「无待评内容」
+            instance.relevance_status = "completed"
+            instance.relevance_error = None
+        await db.commit()
+        return
+
+    instance.relevance_status = "pending"
+    try:
+        await svc.enqueue(
+            queue_type="jev",
+            task_type="jev_scoring",
+            params_json=json.dumps(
+                {"instance_id": instance.id, "instance_no": instance.instance_no},
+                ensure_ascii=False,
+            ),
+            task_key=f"jev_{instance.instance_no}",
+            timeout_sec=JEV_TIMEOUT_SEC,
+        )
+    except Exception as e:
+        # 入队失败不能让作业悬在 search_completed：CNKI 结果已拿到，直接收尾并如实标记
+        logger.error(f"enqueue jev scoring failed for {instance.instance_no}: {e}", exc_info=True)
+        instance.status = "completed"
+        instance.completed_at = timezone.now()
+        instance.relevance_status = "failed"
+        instance.relevance_error = f"相关性评分任务入队失败：{str(e)[:300]}"
+    await db.commit()
+
+
 async def run_cnki_search(
     db: AsyncSession,
     item_id: int,
@@ -280,33 +272,23 @@ async def run_cnki_search(
         search_params = exec_params.get("search_params", {})
 
         loop = asyncio.get_running_loop()
-        heartbeat_stop = asyncio.Event()
 
         def _on_stage(stage: str, extra: dict) -> None:
             # 从浏览器线程回到事件循环写进度
             asyncio.run_coroutine_threadsafe(_save_progress(instance_id, stage, extra), loop)
 
-        heartbeat_task = asyncio.create_task(_heartbeat_loop(instance_id, heartbeat_stop))
-        try:
-            # 必须用专用单线程 executor，不能与默认池共享：
-            # PDF 下载（asyncio.to_thread）在同一线程泄漏 Playwright sync 的 dispatcher
-            # event loop 后，默认池线程被复用会导致本检索报
-            # "Playwright Sync API inside the asyncio loop"（见 docs/changelog/20260929）。
-            # 专用单线程同时天然保证同进程内检索串行。
-            global _search_executor
-            search_result = await loop.run_in_executor(
-                _search_executor,
-                _run_search_sync,
-                search_params,
-                instance_no,
-                settings.uploads_dir,
-                _on_stage,
-            )
+        global _search_executor
+        search_coro = loop.run_in_executor(
+            _search_executor,
+            _run_search_sync,
+            search_params,
+            instance_no,
+            settings.uploads_dir,
+            _on_stage,
+        )
+        search_result = await _with_heartbeat(instance_id, search_coro)
 
-            await process_search_results(db, instance, search_result)
-        finally:
-            heartbeat_task.cancel()
-            await asyncio.gather(heartbeat_task, return_exceptions=True)
+        await process_search_results(db, instance, search_result)
 
         await svc.complete(item_id, json.dumps({"status": "completed", "total": instance.search_result_count}))
 
@@ -314,9 +296,7 @@ async def run_cnki_search(
             await _save_progress(instance_id, "done")
 
         if is_api:
-            instance.status = "completed"
-            instance.completed_at = timezone.now()
-            await db.commit()
+            await _dispatch_api_relevance(db, svc, instance, exec_params)
             return
 
         from app.routers.sse import broadcast_event

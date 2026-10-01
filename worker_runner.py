@@ -25,6 +25,13 @@ class LlmWorker(BaseWorker):
         await run_llm_analysis(db, item_id, params_json)
 
 
+class JevWorker(BaseWorker):
+    async def process(self, db, item_id: int, params_json: str) -> None:
+        logger.info(f"[JEV] Task {item_id}: {params_json}")
+        from app.worker.jev_worker import run_jev_scoring
+        await run_jev_scoring(db, item_id, params_json)
+
+
 class DownloadWorker(BaseWorker):
     async def process(self, db, item_id: int, params_json: str) -> None:
         logger.info(f"[DOWNLOAD] Task {item_id}: {params_json}")
@@ -42,16 +49,19 @@ class ExportWorker(BaseWorker):
 WORKER_MAP = {
     "cnki": CnkiWorker,
     "llm": LlmWorker,
+    "jev": JevWorker,
     "download": DownloadWorker,
     "export": ExportWorker,
 }
 
+DEFAULT_CONCURRENCY = {"cnki": 1, "download": 1, "llm": 5, "jev": 3, "export": 2}
+
 if __name__ == "__main__":
     queue_type = sys.argv[1] if len(sys.argv) > 1 else "cnki"
-    concurrency = int(sys.argv[2]) if len(sys.argv) > 2 else {"cnki": 1, "download": 1, "llm": 5, "export": 2}.get(queue_type, 1)
+    concurrency = int(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_CONCURRENCY.get(queue_type, 1)
     worker_cls = WORKER_MAP.get(queue_type)
     if not worker_cls:
-        print(f"Unknown queue type: {queue_type}. Choose from: cnki, llm, download, export")
+        print(f"Unknown queue type: {queue_type}. Choose from: {', '.join(WORKER_MAP)}")
         sys.exit(1)
     worker = worker_cls(queue_type=queue_type, session_factory=async_session_factory, concurrency=concurrency)
     asyncio.run(worker.run())

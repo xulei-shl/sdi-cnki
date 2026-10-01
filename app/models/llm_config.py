@@ -15,6 +15,9 @@ class LlmConfig(Base):
     model_name = Column(String(100), nullable=False)
     api_key_encrypted = Column(String(500), nullable=False)
     api_endpoint = Column(String(500), nullable=False)
+    # 配置类型：llm=OpenAI 兼容的 chat/completions；jev=TypeSafe System One 评分端点。
+    # 两者共用本表的加密与 CRUD，但端点形状完全不同，消费方必须按此字段过滤。
+    config_type = Column(String(20), default="llm", nullable=False, index=True)
     is_active = Column(Boolean, default=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime, default=timezone.now, server_default=text("(datetime('now', 'localtime'))"), nullable=False)

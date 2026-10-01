@@ -23,7 +23,12 @@ export function deleteLlmConfig(id: number) {
   return http.delete(`/llm-configs/${id}`)
 }
 
-export function testLlmConfig(data: { model_name: string; api_endpoint: string; api_key: string }) {
+export function testLlmConfig(data: {
+  model_name: string
+  api_endpoint: string
+  api_key: string
+  config_type?: 'llm' | 'jev'
+}) {
   return http.post('/llm-configs/test', data)
 }
 

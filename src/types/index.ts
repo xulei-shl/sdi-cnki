@@ -143,6 +143,8 @@ export interface LlmConfig {
   model_name: string
   api_endpoint: string
   api_key: string
+  /** llm=OpenAI 兼容 chat/completions；jev=TypeSafe System One 评分端点 */
+  config_type: 'llm' | 'jev'
   is_active: boolean
   created_at: string
 }

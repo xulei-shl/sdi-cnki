@@ -52,6 +52,7 @@ async def _start_worker(queue_type: str, concurrency: int):
     cls_map = {
         "cnki": ("app.worker.cnki_worker", "run_cnki_search"),
         "llm": ("app.worker.llm_worker", "run_llm_analysis"),
+        "jev": ("app.worker.jev_worker", "run_jev_scoring"),
         "download": ("app.worker.download_worker", "run_download"),
         "export": ("app.worker.export_worker", "run_export"),
     }
@@ -82,6 +83,7 @@ async def lifespan(app: FastAPI):
         worker_configs = [
             ("cnki", 1),
             ("llm", 5),
+            ("jev", 3),
             ("download", 1),
             ("export", 2),
         ]

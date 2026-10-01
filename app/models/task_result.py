@@ -41,4 +41,5 @@ class TaskResult(Base):
 
     task_instance = relationship("TaskInstance", back_populates="task_results")
     llm_analysis = relationship("LlmAnalysisResult", back_populates="task_result", uselist=False, cascade="all, delete-orphan")
+    jev_score = relationship("JevScore", back_populates="task_result", uselist=False, cascade="all, delete-orphan")
     download_result = relationship("DownloadResult", back_populates="task_result", uselist=False, cascade="all, delete-orphan")

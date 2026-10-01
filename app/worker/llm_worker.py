@@ -20,6 +20,7 @@ from app.models.task_result import TaskResult
 from app.services.download_progress import resolve_review_status
 from app.services.json_parser import parse_llm_json
 from app.services.llm_provider import call_llm_with_retry
+from app.services.search_topic import format_search_conditions
 from app.task_queue.crud import TaskQueueService
 from app.utils.crypto import decrypt_api_key
 from app.utils.logging import get_logger
@@ -175,11 +176,20 @@ async def run_llm_analysis(
 
 
 async def _load_llm_configs(db: AsyncSession, config_ids: list[int]) -> list[dict[str, Any]]:
+    """按 execution_params 快照的顺序加载 LLM 配置。
+
+    必须过滤 config_type='llm'：JEV（TypeSafe）配置同样存在 llm_configs 表里，但它的
+    端点不是 chat/completions，llm_provider 会拼 /v1/chat/completions 从而必然失败。
+    """
     if not config_ids:
         return []
     configs = []
     for cfg_id in config_ids:
-        stmt = select(LlmConfig).where(LlmConfig.id == cfg_id, LlmConfig.is_active == True)
+        stmt = select(LlmConfig).where(
+            LlmConfig.id == cfg_id,
+            LlmConfig.is_active == True,
+            LlmConfig.config_type == "llm",
+        )
         r = await db.execute(stmt)
         cfg = r.scalar_one_or_none()
         if cfg:
@@ -211,68 +221,12 @@ async def _load_prompt_template(
     r = await db.execute(stmt)
     fallback = r.scalar_one_or_none()
     if fallback:
-        search_conditions = _format_search_conditions(exec_params or {})
+        search_conditions = format_search_conditions((exec_params or {}).get("search_params"))
         if "{{search_conditions}}" in fallback.content:
             return fallback.content.replace("{{search_conditions}}", search_conditions)
         return fallback.content + "\n\n--- 本次检索条件 ---\n" + search_conditions
 
     return None
-
-
-def _format_search_conditions(exec_params: dict) -> str:
-    search_params = exec_params.get("search_params") or {}
-    if isinstance(search_params, str):
-        search_params = json.loads(search_params)
-
-    parts = []
-    search_mode = search_params.get("search_mode", "basic")
-
-    if search_mode == "professional":
-        group_a = search_params.get("query_group_a") or []
-        group_b = search_params.get("query_group_b") or []
-        if group_a and group_b:
-            parts.append(f"主题A关键词组：{'、'.join(group_a)}")
-            parts.append(f"主题B关键词组：{'、'.join(group_b)}")
-        elif group_a:
-            parts.append(f"主题关键词组：{'、'.join(group_a)}")
-        elif group_b:
-            parts.append(f"主题关键词组：{'、'.join(group_b)}")
-        au = search_params.get("au_group") or []
-        if au:
-            parts.append(f"作者：{'、'.join(au)}")
-        fu = search_params.get("fu_group") or []
-        if fu:
-            parts.append(f"基金：{'、'.join(fu)}")
-    else:
-        queries = search_params.get("queries") or []
-        if queries:
-            parts.append(f"检索关键词：{'、'.join(queries)}")
-
-    year_from = search_params.get("year_from")
-    year_to = search_params.get("year_to")
-    if year_from and year_to:
-        parts.append(f"出版年份：{year_from}—{year_to}")
-    elif year_from:
-        parts.append(f"出版年份：{year_from}年起")
-    elif year_to:
-        parts.append(f"出版年份：{year_to}年止")
-
-    date_range = search_params.get("date_range")
-    if date_range:
-        range_labels = {
-            "week": "最近一周", "month": "最近一个月",
-            "half-year": "最近半年", "year": "最近一年",
-            "ytd": "今年以来", "last-year": "去年全年",
-        }
-        parts.append(f"更新时间：{range_labels.get(date_range, date_range)}")
-
-    if search_params.get("core_only"):
-        parts.append("来源范围：仅核心期刊")
-
-    if not parts:
-        return "未指定检索条件"
-
-    return "\n".join(parts)
 
 
 def _build_messages(prompt_template: str | None, tr: TaskResult) -> list[dict[str, str]]:

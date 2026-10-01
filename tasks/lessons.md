@@ -1,5 +1,29 @@
 # 经验教训
 
+## 2026-10-01: 可选增值环节失败，不得丢弃已产出的业务成果
+
+### Bug: 超时回收只改队列行，不回退业务对象，实例永久悬在中间态
+- **现象**: `jev` 评分期间 worker 进程崩溃/重启，队列行被 `reclaim_stale_running` 标记为 `failed`，但实例仍停在 `search_completed`（对外映射 `running`），调用方永远轮询不到终态。
+- **根因**: `reconcile_failed_task` 只在 `BaseWorker._process_wrapper` 的**执行中抛错**路径上被调用；而 `reclaim_stale_running`（进程崩溃/重启的兜底路径）只改队列行，不碰业务对象。两条失败路径没有收敛到同一处。
+- **教训**: 业务对象的中间态回收**必须覆盖所有失败路径**，不能只挂在异常捕获上。凡是新增队列类型或新的兜底回收机制，都要检查「非正常退出」这条路是否同样能回到终态。
+- **附带**: 该缺陷对 `cnki` / `llm` 队列同样存在（它们的中间态也只由异常路径回收），修复一并生效。
+- **验证方式**: `tests/test_jev_scoring.py::test_reclaim_stale_jev_row_also_finalizes_instance` 钉死该不变量；先写测试复现（实例停在 `search_completed`），修复后通过。
+
+### Bug: alembic 在一次 upgrade 内缓存 Inspector，导致索引被静默跳过
+- **现象**: 010 迁移跑完后，`jev_scores` 的两个索引建好了，但 `task_instances.relevance_status` 与 `llm_configs.config_type` 的索引**没有建**，且迁移**不报任何错**。
+- **根因**: alembic 在一次 `upgrade` 中缓存了 `Inspector`。索引存在性判断复用缓存的 `get_indexes()`，拿到的是 `add_column` **之前**的结果，于是「索引不存在」被误判为「已存在」而跳过。
+- **教训**: 缺索引属于**静默失败**——开发期数据量小看不出来，只在数据量上来后显现为慢查询，因此格外危险。迁移中的存在性判断（`_create_index_if_missing` 一类）必须**每次重新取 inspector**，不能复用变量；且索引创建不能放在「建表」分支内，否则表已由 `create_all` 建好时会连带跳过既有表上新加列的索引。
+- **验证方式**: 在真实库副本上跑 `upgrade` → 检查 `PRAGMA index_list` → 重复 `upgrade`（幂等）→ `downgrade` → 再 `upgrade`，逐步核对。
+
+### 约定: 检索成功后的增值环节（JEV 评分）失败，作业仍为 succeeded
+- **背景**: 开放接口在 CNKI 检索入库后新增 JEV 相关性判断，**默认执行**。若沿用 recovery 的「API 作业失败一律回收到 `failed`」口径，一次 JEV 故障（未配置 / 限流 / 模型异常）会让调用方**既拿不到文献也拿不到分数**，把一次成功且不可再生的 CNKI 检索彻底丢弃。
+- **规则**: 跑在「已有业务成果产出之后」的环节，其失败只能降级自身状态，**不得改变作业终态**。`app/worker/recovery.py` 的 `_reconcile_jev` 是该模块唯一刻意偏离统一口径的分支，代码中已注明理由。判断依据是「失败时业务对象是否已有产出」——`cnki`/`llm` 失败时没有，`jev` 失败时有。
+- **配套**: 「没打上分」与「打了低分」必须可区分。未评分一律 `relevance_score=null`（**不是 0**），且**不返回 `relevance_failed` 之类布尔标志**——那类内部状态字段会诱发大模型误判为「文献质量低劣」或「整体执行失败」（见 `docs/api-agent友好升级/skills_api_evaluation_report.md` §2.3）。失败只在 `relevance.state` / `relevance.error` / `counts.relevance.failed` 三处汇总呈现。
+
+### 约定: 「先判终态再排队」的顺序不能反
+- **规则**: 检索完成后**不能**立刻置 `completed` 再入队评分任务。否则调用方会在评分仍在跑时就看到 `succeeded`，取到一批 `relevance_score=null` 的记录。正确做法是停在 `search_completed`（对外已映射为 `running`），由评分 worker 收尾时才置终态。
+- **同源教训**: 2026-09-30「重跑分析把已完成实例打回审核中」是同一类问题的镜像——终态判定不能由多处各自赋值。两者都指向：**实例状态的推进点必须唯一**。
+
 ## 2026-09-30: 重跑分析把已完成实例打回「审核中」
 
 ### Bug: `completed` 终态被后续分析覆盖（实例 T20260830002）

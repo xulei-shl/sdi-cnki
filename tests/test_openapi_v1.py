@@ -374,6 +374,9 @@ async def test_status_reports_stage_heartbeat_and_results(env):
                 search_result_count=1,
                 valid_data_count=1,
                 duplicate_count=0,
+                # 默认请求相关性判断，故此处模拟「评分也已完成」；评分链路本身由
+                # tests/test_jev_scoring.py 覆盖
+                relevance_status="completed",
                 progress_stage="done",
                 progress_message="检索完成",
                 progress_current=1,
@@ -390,7 +393,20 @@ async def test_status_reports_stage_heartbeat_and_results(env):
         assert status["stage_message"] == "检索完成"
         assert status["result_ready"] is True
         assert status["next_poll_after_ms"] == 0
-        assert status["counts"] == {"total": 1, "valid": 1, "duplicate": 0}
+        assert status["counts"] == {
+            "total": 1,
+            "valid": 1,
+            "duplicate": 0,
+            "relevance": {"total": 0, "scored": 0, "failed": 0},
+        }
+        assert status["relevance"] == {
+            "enabled": True,
+            "state": "completed",
+            "total": 0,
+            "scored": 0,
+            "failed": 0,
+            "error": None,
+        }
         assert status["heartbeat_age_seconds"] is not None
         assert status["result_url"].endswith(f"/metadata-jobs/{job_id}/results")
 

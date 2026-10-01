@@ -168,6 +168,18 @@ class TaskQueueService:
                 # 下载任务超时回收后，把对应实例从 downloading/download_queued 回退到审核态，
                 # 避免“实例显示下载中但实际没有任务在跑”的悬挂状态。
                 await self._revert_download_instances(reclaimed_items)
+            # 其余队列走统一业务对象回收：worker 崩溃时不会走到 _process_wrapper
+            # 的异常分支，不补这一层会让实例悬在入队中间态（cnki/llm/jev 均如此，
+            # jev 尤其致命——调用方会永远轮询不到终态）。
+            from app.worker.recovery import reconcile_failed_task
+
+            for item in reclaimed_items:
+                try:
+                    await reconcile_failed_task(
+                        self.db, item.id, item.error_message or "任务超时被自动回收"
+                    )
+                except Exception as e:
+                    logger.error(f"Reconcile reclaimed task {item.id} error: {e}", exc_info=True)
         return len(reclaimed_items)
 
     async def _revert_download_instances(self, items: list[TaskQueueItem]) -> None:

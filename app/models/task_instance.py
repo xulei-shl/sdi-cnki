@@ -33,6 +33,12 @@ class TaskInstance(Base):
     analysis_completed_at = Column(DateTime)
     download_started_at = Column(DateTime)
     completed_at = Column(DateTime)
+    # 相关性评分（JEV）状态：null=未请求；pending/running/completed/partial/failed。
+    # 单独存于实例而非每次聚合查询，是为了让开放接口轮询能 O(1) 读出，
+    # 同时给 recovery 的失败兜底一个落点。
+    relevance_status = Column(String(20), index=True)
+    relevance_error = Column(Text)
+
     # 检索过程进度上报（跨进程可见，供开放接口轮询；网页 SSE 不使用）
     progress_stage = Column(String(30))
     progress_message = Column(String(200))

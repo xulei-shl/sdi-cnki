@@ -31,6 +31,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.dependencies import create_artifact_token, decode_artifact_token, hash_password
 from app.models.api_key import ApiKey
+from app.models.jev_score import JevScore
 from app.models.meta_task import MetaTask
 from app.models.task_instance import TaskInstance
 from app.models.task_queue import TaskQueueItem
@@ -205,6 +206,21 @@ async def revoke_api_key(
 # ═══════════════════════════════════════════════════════════
 
 
+class RelevanceRequest(BaseModel):
+    """相关性判断（JEV）参数。
+
+    默认启用：调用方不传即执行。判定是**可选增值环节**——无论它成功、失败还是
+    未配置，CNKI 检索结果都照常返回，作业终态都是 succeeded。
+    """
+
+    enabled: bool = Field(default=True, description="是否执行相关性判断，默认 true")
+    topic: Optional[str] = Field(
+        default=None,
+        max_length=2000,
+        description="可选的自然语言定题描述；缺省时由服务端从检索条件（主题组/作者/基金/年份）自动派生",
+    )
+
+
 class MetadataJobRequest(BaseModel):
     """检索条件。basic 模式用 query/queries，professional 模式用 query_group_a/query_group_b。"""
 
@@ -225,10 +241,15 @@ class MetadataJobRequest(BaseModel):
         default=API_DEFAULT_MAX_EXPORT, description="导出条数上限，仅支持 50 或 100"
     )
     idempotency_key: Optional[str] = Field(default=None, max_length=64)
+    relevance: RelevanceRequest = Field(default_factory=RelevanceRequest)
 
 
 def _build_search_params(body: MetadataJobRequest) -> dict:
-    params = {k: v for k, v in body.model_dump(exclude_none=True).items() if k != "idempotency_key"}
+    params = {
+        k: v
+        for k, v in body.model_dump(exclude_none=True).items()
+        if k not in ("idempotency_key", "relevance")
+    }
     validate_search_params(params)
     return params
 
@@ -304,22 +325,31 @@ async def _queue_position(db: AsyncSession, instance: TaskInstance) -> int:
 
 
 async def _inflight_job_ids(db: AsyncSession) -> list[int]:
-    """返回仍占用 cnki 串行槽位的 API 作业 id。
+    """返回仍占用串行槽位或仍在评分的 API 作业 id。
 
     以队列行为准，而非 TaskInstance.status：实例状态可能因异常遗留而长期停在
     中间态（历史事故见 docs/changelog/20260930），若按实例计数会永久占掉配额，
-    把限流变成自我拒绝服务。队列行才是真正占据串行槽位的对象，且超时会被
+    把限流变成自我拒绝服务。队列行才是真正占用的对象，且超时会被
     reclaim_stale_running 回收。
 
     识别 API 作业的依据是 priority 等于本模块入队时用的 API_QUEUE_PRIORITY
     （网页检索入队用默认值 0）；引用同一常量可避免优先级调整后二者漂移。
+    JEV 评分队列行由 jev_worker 用默认 priority 入队，故按 task_type 精确匹配。
     """
     rows = (
         await db.execute(
             select(TaskQueueItem.params_json).where(
-                TaskQueueItem.queue_type == "cnki",
-                TaskQueueItem.task_type == "cnki_search",
-                TaskQueueItem.priority == API_QUEUE_PRIORITY,
+                or_(
+                    and_(
+                        TaskQueueItem.queue_type == "cnki",
+                        TaskQueueItem.task_type == "cnki_search",
+                        TaskQueueItem.priority == API_QUEUE_PRIORITY,
+                    ),
+                    and_(
+                        TaskQueueItem.queue_type == "jev",
+                        TaskQueueItem.task_type == "jev_scoring",
+                    ),
+                ),
                 TaskQueueItem.status.in_(("pending", "retrying", "running")),
             )
         )
@@ -390,14 +420,67 @@ async def _build_status(db: AsyncSession, instance: TaskInstance, *, deduplicate
     if state == "running":
         payload["eta_seconds"] = await _estimate_remaining_seconds(db, instance)
     if instance.status in RESULT_READY_STATES:
-        payload["counts"] = {
+        counts = {
             "total": instance.search_result_count or 0,
             "valid": instance.valid_data_count or 0,
             "duplicate": instance.duplicate_count or 0,
         }
+        relevance = await _relevance_summary(db, instance)
+        if relevance is not None:
+            counts["relevance"] = {
+                "total": relevance["total"],
+                "scored": relevance["scored"],
+                "failed": relevance["failed"],
+            }
+        payload["counts"] = counts
+    # 相关性状态独立成块而非塞进 error：它是可选增值环节，作业终态始终是
+    # succeeded，调用方需要区分「没打分(unavailable)」「打了但部分失败(partial)」
+    # 「完全没打上(failed)」三种情况，而 error 在 succeeded 下恒为 null。
+    payload["relevance"] = await _relevance_block(db, instance)
     if deduplicated:
         payload["deduplicated"] = True
     return payload
+
+
+async def _relevance_counts(db: AsyncSession, instance: TaskInstance) -> dict:
+    """按作业聚合 JEV 评分的 scored / failed / total。
+
+    total 取 jev_scores 的实际行数（参与评分的条目数），而非 valid_data_count：
+    重复条目不参与评分，用后者会让调用方看到「total=50 但只有 47 行有分」而困惑。
+    """
+    from app.models.jev_score import JevScore
+
+    rows = (
+        await db.execute(
+            select(JevScore.status).where(JevScore.task_instance_id == instance.id)
+        )
+    ).scalars().all()
+    scored = sum(1 for s in rows if s == "completed")
+    return {
+        "total": len(rows),
+        "scored": scored,
+        "failed": len(rows) - scored,
+    }
+
+
+async def _relevance_block(db: AsyncSession, instance: TaskInstance) -> Optional[dict]:
+    """状态接口的 relevance 块。未请求判断时返回 enabled=false 便于调用方直接判空。"""
+    if instance.relevance_status is None:
+        return {"enabled": False, "state": None, "total": 0, "scored": 0, "failed": 0, "error": None}
+    counts = await _relevance_counts(db, instance)
+    return {
+        "enabled": True,
+        "state": instance.relevance_status,
+        **counts,
+        "error": instance.relevance_error,
+    }
+
+
+async def _relevance_summary(db: AsyncSession, instance: TaskInstance) -> Optional[dict]:
+    """counts 里的 relevance 摘要；未请求判断时返回 None（不污染原有 counts 结构）。"""
+    if instance.relevance_status is None:
+        return None
+    return await _relevance_counts(db, instance)
 
 
 @router.post("/metadata-jobs", status_code=202)
@@ -439,11 +522,18 @@ async def create_metadata_job(
 
     user, meta_task = await _get_or_create_service_actor(db)
     instance_no = await _allocate_instance_no(db)
+    # relevance 只快照「调用方的原始入参」（topic 可能为 null），派生留给 worker：
+    # 派生是纯函数、可复算，把逻辑与数据快照解耦，后续调整派生规则不影响历史作业。
+    relevance_enabled = bool(body.relevance.enabled)
     execution_params = {
         "search_params": search_params,
         "prompt_template_id": None,
         "llm_config_ids": [],
         "api_key_id": client.id,
+        "relevance": {
+            "enabled": relevance_enabled,
+            "topic": (body.relevance.topic or "").strip() or None,
+        },
     }
     instance = TaskInstance(
         meta_task_id=meta_task.id,
@@ -452,6 +542,7 @@ async def create_metadata_job(
         status="search_queued",
         auto_run=True,
         source="api",
+        relevance_status="pending" if relevance_enabled else None,
         execution_params=json.dumps(execution_params, ensure_ascii=False),
     )
     db.add(instance)
@@ -494,6 +585,9 @@ async def get_metadata_job(
         instance = await _get_instance(db, job_id, refresh=True)
 
 
+# JEV 相关性字段（拼接到文献字段之后，由 _serialize_result 按需合并）
+RELEVANCE_RESULT_FIELDS = ("relevance_score", "relevance_level")
+
 ALL_RESULT_FIELDS = (
     "id",
     "title",
@@ -514,8 +608,10 @@ ALL_RESULT_FIELDS = (
     "original_url",
     "doi",
     "reference_format",
-)
+) + RELEVANCE_RESULT_FIELDS
 
+# core 是给 Agent 做初筛的轻量视图。相关性分是初筛的第一依据，不带出来等于
+# 「感知轨」拿到了分数却没有，故纳入（6 → 8 字段；纯加字段，不破坏既有调用方）。
 CORE_RESULT_FIELDS = (
     "id",
     "title",
@@ -523,7 +619,7 @@ CORE_RESULT_FIELDS = (
     "source_journal",
     "publish_year",
     "original_url",
-)
+) + RELEVANCE_RESULT_FIELDS
 
 FIELD_ALIASES = {"doc_id": "id"}
 
@@ -545,9 +641,19 @@ def _parse_selected_fields(fields: str | None) -> tuple[str, ...] | None:
     return tuple(dict.fromkeys(selected))
 
 
-def _serialize_result(row: TaskResult, selected_fields: tuple[str, ...] | None = None) -> dict:
+def _serialize_result(
+    row: TaskResult,
+    selected_fields: tuple[str, ...] | None = None,
+    score: "JevScore | None" = None,
+) -> dict:
     fields = selected_fields or ALL_RESULT_FIELDS
-    return {k: getattr(row, k) for k in fields}
+    record = {k: getattr(row, k) for k in fields if k not in RELEVANCE_RESULT_FIELDS}
+    for key in RELEVANCE_RESULT_FIELDS:
+        if key in fields:
+            # 未评分/评分失败一律 None，绝不用 0 兜底：0 是「打了低分」，
+            # 混淆两者会让调用方误判文献质量（0 分本就该被过滤掉）。
+            record[key] = getattr(score, key, None) if score is not None else None
+    return record
 
 
 async def _ensure_json_file(instance: TaskInstance, db: AsyncSession) -> Path:
@@ -561,12 +667,13 @@ async def _ensure_json_file(instance: TaskInstance, db: AsyncSession) -> Path:
         json_path.parent.mkdir(parents=True, exist_ok=True)
         rows = (
             await db.execute(
-                select(TaskResult)
+                select(TaskResult, JevScore)
+                .outerjoin(JevScore, JevScore.task_result_id == TaskResult.id)
                 .where(TaskResult.task_instance_id == instance.id)
                 .order_by(TaskResult.id)
             )
-        ).scalars().all()
-        data = [_serialize_result(r) for r in rows]
+        ).all()
+        data = [_serialize_result(r, None, s) for r, s in rows]
         json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return json_path
 
@@ -579,6 +686,12 @@ async def get_metadata_job_results(
     fields: Optional[str] = Query(None, description="字段裁剪：预设 'core' 或以逗号分隔具体字段列表"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    sort: Literal["id", "relevance"] = Query(
+        "id", description="排序：id=按入库顺序（默认，稳定可重入）；relevance=按相关性分降序，未打分沉底"
+    ),
+    min_relevance: Optional[float] = Query(
+        None, ge=0.0, le=1.0, description="只返回相关性分不低于该值的文献；未打分条目会被排除"
+    ),
     inline: bool = Query(False, description="format 为 excel/json_file 时是否直接内联返回文件（受体积上限约束）"),
     client: ApiKey = Depends(get_api_client),
     db: AsyncSession = Depends(get_db),
@@ -594,18 +707,42 @@ async def get_metadata_job_results(
         return await _json_file_payload(instance, request, inline, db)
 
     selected_fields = _parse_selected_fields(fields)
+    # 直接调用路由函数（不经 HTTP）时默认值是 Query 对象而非实际值，
+    # 故显式归一，模式与既有的 format/type 参数一致。
+    sort_relevance = sort == "relevance" if isinstance(sort, str) else False
+    if not isinstance(min_relevance, (int, float)) or isinstance(min_relevance, bool):
+        min_relevance = None
+
+    conditions = [TaskResult.task_instance_id == job_id]
+    if min_relevance is not None:
+        # 未评分（score 为 NULL）不满足任何阈值，自然被排除——调用方要的是
+        # 「确实打过分且达到阈值」的文献，而不是把没打分的当成 0 分混入。
+        conditions.append(JevScore.relevance_score >= min_relevance)
+
+    if sort_relevance:
+        # 未打分（NULL）沉底：SQLite 默认 NULL 最小，desc 排序需显式处理
+        order = (JevScore.relevance_score.is_(None), JevScore.relevance_score.desc(), TaskResult.id)
+    else:
+        order = (TaskResult.id,)
+
     total = (
-        await db.execute(select(func.count(TaskResult.id)).where(TaskResult.task_instance_id == job_id))
+        await db.execute(
+            select(func.count(TaskResult.id))
+            .select_from(TaskResult)
+            .outerjoin(JevScore, JevScore.task_result_id == TaskResult.id)
+            .where(*conditions)
+        )
     ).scalar() or 0
     rows = (
         await db.execute(
-            select(TaskResult)
-            .where(TaskResult.task_instance_id == job_id)
-            .order_by(TaskResult.id)
+            select(TaskResult, JevScore)
+            .outerjoin(JevScore, JevScore.task_result_id == TaskResult.id)
+            .where(*conditions)
+            .order_by(*order)
             .offset(offset)
             .limit(limit)
         )
-    ).scalars().all()
+    ).all()
     next_offset = offset + len(rows)
     return {
         "job_id": instance.id,
@@ -615,7 +752,7 @@ async def get_metadata_job_results(
         "offset": offset,
         "limit": limit,
         "next_offset": next_offset if next_offset < total else None,
-        "records": [_serialize_result(r, selected_fields) for r in rows],
+        "records": [_serialize_result(r, selected_fields, s) for r, s in rows],
     }
 
 
