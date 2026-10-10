@@ -430,6 +430,57 @@ async def test_status_reports_stage_heartbeat_and_results(env):
 
 
 @pytest.mark.asyncio
+async def test_status_echoes_search_conditions(env):
+    """状态接口必须回显完整检索条件：归一化后的实际检索式 + 时间 + 是否核心等。
+
+    basic 模式被归一化为 professional（关键词合并为 group A），与 worker 实际
+    执行的检索式一致（共用 query_builder）；原始入参保留在 `submitted`。
+    """
+    from app.routers.openapi_v1 import MetadataJobRequest, create_metadata_job, get_metadata_job
+
+    async with env["factory"]() as db:
+        _, key = await _load_actors(db, env)
+
+        # basic 模式：关键词归一化为 SU OR TKA
+        job_id = (await create_metadata_job(MetadataJobRequest(query="AI"), client=key, db=db))["job_id"]
+        status = await get_metadata_job(job_id, wait=0, client=key, db=db)
+        sc = status["search_conditions"]
+        assert sc["search_mode"] == "professional"
+        assert sc["query"] == "SU=('AI') OR TKA=('AI')"
+        assert sc["query_group_a"] == ["AI"]
+        assert sc["query_group_b"] == []
+        assert sc["submitted"]["queries"] == ["AI"]
+        assert sc["submitted"]["max_export"] == 50
+        assert sc["submitted"]["core_only"] is False
+
+        # professional 模式：A/B 组 + 作者 + 基金 + 年份 + 核心期刊
+        job_id2 = (await create_metadata_job(
+            MetadataJobRequest(
+                search_mode="professional",
+                query_group_a=["阅读推广", "全民阅读"],
+                query_group_b=["人工智能"],
+                au_group=["张三"],
+                fu_group=["国家社会科学基金"],
+                year_from=2023,
+                year_to=2025,
+                core_only=True,
+                max_export=100,
+            ),
+            client=key, db=db,
+        ))["job_id"]
+        sc2 = (await get_metadata_job(job_id2, wait=0, client=key, db=db))["search_conditions"]
+        assert sc2["query"] == (
+            "(((SU=('阅读推广' + '全民阅读') AND SU=('人工智能'))"
+            " OR (TKA=('阅读推广' + '全民阅读') AND TKA=('人工智能')))"
+            " AND AU=('张三')) AND FU % ('国家社会科学基金')"
+        )
+        assert sc2["year_from"] == 2023 and sc2["year_to"] == 2025
+        assert sc2["core_only"] is True
+        assert sc2["max_export"] == 100
+        assert sc2["submitted"]["core_only"] is True
+
+
+@pytest.mark.asyncio
 async def test_artifact_token_scoped_to_job(env):
     from app.routers.openapi_v1 import (
         MetadataJobRequest,
@@ -460,6 +511,80 @@ async def test_artifact_token_scoped_to_job(env):
         # 其他作业的 token 不能下载本作业文件
         with pytest.raises(AuthenticationError):
             await download_metadata_artifact(job_id, token=create_artifact_token(job_id + 1, 30), authorization=None, db=db)
+
+
+@pytest.mark.asyncio
+async def test_excel_results_append_jev_score_columns(env):
+    """请求相关性判断时，Excel 导出应在 CNKI 原始文件末尾追加评分两列。
+
+    行序对齐：原始文件第 1 行为表头，数据行与 task_results 入库顺序一一对应。
+    """
+    import pandas as pd
+
+    from app.models.jev_score import JevScore
+    from app.routers.openapi_v1 import (
+        MetadataJobRequest,
+        _get_instance,
+        _scored_excel_path,
+        create_metadata_job,
+        get_metadata_job_results,
+    )
+
+    async with env["factory"]() as db:
+        _, key = await _load_actors(db, env)
+        job_id = (await create_metadata_job(MetadataJobRequest(query="AI"), client=key, db=db))["job_id"]
+
+        xlsx = Path(env["tmp"]) / "merged.xlsx"
+        pd.DataFrame(
+            [{"Title-题名": "文献A"}, {"Title-题名": "文献B"}]
+        ).to_excel(xlsx, index=False, engine="openpyxl")
+        await db.execute(
+            update(TaskInstance)
+            .where(TaskInstance.id == job_id)
+            .values(
+                status="completed",
+                search_result_file_path=str(xlsx),
+                search_result_count=2,
+                valid_data_count=2,
+                duplicate_count=0,
+                relevance_status="completed",
+            )
+        )
+        db.add(TaskResult(task_instance_id=job_id, title="文献A", authors="张三"))
+        db.add(TaskResult(task_instance_id=job_id, title="文献B", authors="李四"))
+        await db.commit()
+        rows = (await db.execute(select(TaskResult.id).where(TaskResult.task_instance_id == job_id))).scalars().all()
+        db.add(JevScore(task_result_id=rows[0], task_instance_id=job_id, status="completed",
+                        relevance_score=0.82, relevance_level=4))
+        db.add(JevScore(task_result_id=rows[1], task_instance_id=job_id, status="failed"))
+        await db.commit()
+
+        # 未请求相关性判断（relevance_status=None）时不追加列
+        await db.execute(
+            update(TaskInstance).where(TaskInstance.id == job_id).values(relevance_status=None)
+        )
+        await db.commit()
+        assert await _scored_excel_path(await _get_instance(db, job_id), db) is None
+
+        # 请求了相关性判断：生成带两列的副本，未打分行留空
+        await db.execute(
+            update(TaskInstance).where(TaskInstance.id == job_id).values(relevance_status="completed")
+        )
+        await db.commit()
+        instance = await _get_instance(db, job_id)
+        scored = await _scored_excel_path(instance, db)
+        assert scored is not None and Path(scored).is_file()
+
+        df = pd.read_excel(scored, engine="openpyxl").fillna("")
+        assert list(df.columns)[-2:] == ["相关性评分", "相关性等级"]
+        assert df.iloc[0]["相关性评分"] == 0.82 and df.iloc[0]["相关性等级"] == 4
+        assert df.iloc[1]["相关性评分"] == "" and df.iloc[1]["相关性等级"] == ""
+
+        # 结果接口的 excel 下载地址同样落到带分副本
+        excel = await get_metadata_job_results(
+            job_id, _FakeRequest(), format="excel", limit=50, offset=0, inline=False, client=key, db=db
+        )
+        assert excel["size_bytes"] == Path(scored).stat().st_size
 
 
 @pytest.mark.asyncio

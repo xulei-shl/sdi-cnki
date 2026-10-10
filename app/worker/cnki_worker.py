@@ -19,6 +19,7 @@ from app.models.task_instance import TaskInstance
 from app.models.task_result import TaskResult
 from app.services.cnki.browser import CnkiBrowser
 from app.services.cnki.professional_interactor import ProfessionalCnkiInteractor
+from app.services.cnki.query_builder import build_professional_search_params
 from app.services.cnki.exceptions import NoResultsError, CnkiSearchError
 from app.services.excel_parser import parse_excel_to_records, CNKI_COLUMN_MAP
 from app.services.dedup_service import batch_check_and_mark
@@ -40,41 +41,6 @@ JEV_TIMEOUT_SEC = 1800
 _search_executor = __import__("concurrent.futures", fromlist=["ThreadPoolExecutor"]).ThreadPoolExecutor(
     max_workers=1, thread_name_prefix="cnki-search",
 )
-
-
-def _extract_queries(params: dict) -> list[str]:
-    """Extract queries array from search_params with backward compat."""
-    queries = params.get("queries")
-    if queries and isinstance(queries, list):
-        return [q.strip() for q in queries if q.strip()]
-    single = params.get("query")
-    if single and isinstance(single, str) and single.strip():
-        return [single.strip()]
-    return []
-
-
-def build_professional_search_params(params: dict) -> dict | None:
-    """Normalize any search params to a single professional (专业检索) execution.
-
-    Basic mode merges all keywords into one expression as group A
-    (SU=(k1 + k2 + ...) OR TKA=(k1 + k2 + ...)), executed in a single search so
-    the export limit (max_export) is strictly respected. Returns None when there
-    are no keywords (the search should be skipped). Professional-mode params are
-    returned unchanged.
-    """
-    pro_params = dict(params)
-    if pro_params.get("search_mode") == "professional":
-        return pro_params
-
-    queries = _extract_queries(pro_params)
-    if not queries:
-        return None
-    pro_params["search_mode"] = "professional"
-    pro_params["query_group_a"] = queries
-    pro_params["query_group_b"] = []
-    pro_params.pop("queries", None)
-    pro_params.pop("query", None)
-    return pro_params
 
 
 def _run_search_sync(

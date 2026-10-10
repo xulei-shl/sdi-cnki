@@ -26,6 +26,7 @@ from .playwright_helpers import (
     set_input_value,
     wait_for_any_selector,
 )
+from .query_builder import build_professional_query
 
 logger = logging.getLogger("cnki.professional_interactor")
 
@@ -91,40 +92,7 @@ class ProfessionalCnkiInteractor:
         return first_visible_locator(page or self.page, selectors, timeout_ms=500)
 
     def _build_professional_query(self, group_a: list[str], group_b: list[str], au_group: list[str] | None = None, fu_group: list[str] | None = None) -> str:
-        def _quote(kw: str) -> str:
-            kw = kw.replace("'", "\\'")
-            return f"'{kw}'"
-
-        base = None
-
-        if group_a or group_b:
-            a_expr = " + ".join(_quote(kw) for kw in group_a)
-            b_expr = " + ".join(_quote(kw) for kw in group_b)
-            if group_a and group_b:
-                base = (
-                    f"(SU=({a_expr}) AND SU=({b_expr}))"
-                    f" OR "
-                    f"(TKA=({a_expr}) AND TKA=({b_expr}))"
-                )
-            else:
-                expr = a_expr if group_a else b_expr
-                base = f"SU=({expr}) OR TKA=({expr})"
-
-        if au_group:
-            au_expr = " + ".join(_quote(au) for au in au_group)
-            if base:
-                base = f"({base}) AND AU=({au_expr})"
-            else:
-                base = f"AU=({au_expr})"
-
-        if fu_group:
-            fu_expr = " + ".join(_quote(fu) for fu in fu_group)
-            if base:
-                base = f"({base}) AND FU % ({fu_expr})"
-            else:
-                base = f"FU % ({fu_expr})"
-
-        return base
+        return build_professional_query(group_a, group_b, au_group=au_group, fu_group=fu_group)
 
     def _switch_to_professional_tab(self) -> None:
         deadline = _time.time() + 15

@@ -23,6 +23,7 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import FileResponse
+from openpyxl import load_workbook
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,6 +41,7 @@ from app.models.user import User
 from app.routers import require_admin_user
 from app.routers.meta_tasks import validate_search_params
 from app.routers.task_instances import CNKI_TIMEOUT_SEC, _allocate_instance_no
+from app.services.cnki.query_builder import build_professional_query, build_professional_search_params
 from app.task_queue.crud import TaskQueueService
 from app.utils import timezone
 from app.utils.api_key import PREFIX_LENGTH, generate_api_key, verify_api_key
@@ -390,6 +392,41 @@ async def _estimate_remaining_seconds(db: AsyncSession, instance: TaskInstance) 
     return max(int(avg - elapsed), 0)
 
 
+def _build_search_conditions(exec_params: dict) -> dict:
+    """从实例快照的检索入参构造 `search_conditions` 回显块。
+
+    与 worker 执行共用 app/services/cnki/query_builder.py 的归一化/检索式构造
+    逻辑，保证「接口回显的检索式」就是「实际填入 CNKI 的检索式」。basic 模式
+    会被归一化为 professional（query_group_a=全部关键词、query_group_b=[]），
+    因此回显的是归一化后的实际执行形态；原始入参另存于 `submitted`。
+    """
+    search_params = exec_params.get("search_params") or {}
+    pro = build_professional_search_params(search_params)
+    effective = pro if pro is not None else search_params
+    query = build_professional_query(
+        effective.get("query_group_a") or [],
+        effective.get("query_group_b") or [],
+        au_group=effective.get("au_group"),
+        fu_group=effective.get("fu_group"),
+    )
+    return {
+        "search_mode": effective.get("search_mode") or "basic",
+        "query": query or "",
+        "query_group_a": effective.get("query_group_a") or [],
+        "query_group_b": effective.get("query_group_b") or [],
+        "au_group": effective.get("au_group") or [],
+        "fu_group": effective.get("fu_group") or [],
+        "year_from": effective.get("year_from"),
+        "year_to": effective.get("year_to"),
+        "date_range": effective.get("date_range"),
+        "core_only": bool(effective.get("core_only")),
+        "synonym_extend": bool(effective.get("synonym_extend")),
+        "include_no_fulltext": bool(effective.get("include_no_fulltext")),
+        "max_export": effective.get("max_export", API_DEFAULT_MAX_EXPORT),
+        "submitted": search_params,
+    }
+
+
 async def _build_status(db: AsyncSession, instance: TaskInstance, *, deduplicated: bool = False) -> dict:
     now = timezone.now()
     state = STATE_MAP.get(instance.status, "running")
@@ -397,6 +434,9 @@ async def _build_status(db: AsyncSession, instance: TaskInstance, *, deduplicate
     payload: dict = {
         "job_id": instance.id,
         "job_no": instance.instance_no,
+        "search_conditions": _build_search_conditions(
+            json.loads(instance.execution_params) if isinstance(instance.execution_params, str) else (instance.execution_params or {})
+        ),
         "state": state,
         "stage": instance.progress_stage,
         "stage_message": instance.progress_message,
@@ -702,7 +742,7 @@ async def get_metadata_job_results(
 
     res_format = format if isinstance(format, str) else "json"
     if res_format == "excel":
-        return _excel_payload(instance, request, inline)
+        return await _excel_payload(db, instance, request, inline)
     if res_format == "json_file":
         return await _json_file_payload(instance, request, inline, db)
 
@@ -756,10 +796,51 @@ async def get_metadata_job_results(
     }
 
 
-def _excel_payload(instance: TaskInstance, request: Request, inline: bool):
+async def _scored_excel_path(instance: TaskInstance, db: AsyncSession) -> str | None:
+    """返回含 JEV 相关性分两列的 Excel 路径；未请求相关性判断时返回 None。
+
+    CNKI 原始导出文件的表头在第 1 行、数据行随后，行序与 DB 中 task_results
+    的入库顺序一一对应（逐条解析入库、重复条目不删除），故按行对齐追加
+    `相关性评分` / `相关性等级` 两列。未打分条目留空，语义与 JSON 的 null 一致。
+    """
+    if instance.relevance_status is None:
+        return None
+    src = instance.search_result_file_path
+    if not src or not os.path.isfile(src):
+        return None
+    rows = (
+        await db.execute(
+            select(TaskResult.id, JevScore.relevance_score, JevScore.relevance_level)
+            .outerjoin(JevScore, JevScore.task_result_id == TaskResult.id)
+            .where(TaskResult.task_instance_id == instance.id)
+            .order_by(TaskResult.id)
+        )
+    ).all()
+    dest = Path(src).with_name(f"{Path(src).stem}_scored.xlsx")
+    try:
+        wb = load_workbook(src)
+    except Exception:
+        # 源文件不是可解析的 xlsx（如测试桩/损坏文件）时回退到原始文件，不报错
+        return None
+    ws = wb.active
+    score_col = ws.max_column + 1
+    level_col = score_col + 1
+    ws.cell(row=1, column=score_col, value="相关性评分")
+    ws.cell(row=1, column=level_col, value="相关性等级")
+    for idx, (_, score, level) in enumerate(rows, start=2):
+        ws.cell(row=idx, column=score_col, value=score if score is not None else None)
+        ws.cell(row=idx, column=level_col, value=level if level is not None else None)
+    wb.save(dest)
+    return str(dest)
+
+
+async def _excel_payload(db: AsyncSession, instance: TaskInstance, request: Request, inline: bool):
     path = instance.search_result_file_path
     if not path or not os.path.isfile(path):
         raise NotFoundError("元数据 Excel 文件", instance.instance_no)
+    scored = await _scored_excel_path(instance, db)
+    if scored is not None:
+        path = scored
     filename = f"cnki_metadata_{instance.instance_no}.xlsx"
     size = os.path.getsize(path)
     if inline:
@@ -836,6 +917,9 @@ async def download_metadata_artifact(
     path = instance.search_result_file_path
     if not path or not os.path.isfile(path):
         raise NotFoundError("元数据 Excel 文件", instance.instance_no)
+    scored = await _scored_excel_path(instance, db)
+    if scored is not None:
+        path = scored
     return FileResponse(
         path,
         filename=f"cnki_metadata_{instance.instance_no}.xlsx",
