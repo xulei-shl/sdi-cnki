@@ -16,6 +16,8 @@ parts/
 sdist/
 var/
 wheels/
+# 上面的 lib/ 会误伤前端源码目录 src/lib/，需放行
+!src/lib/
 *.egg-info/
 .installed.cfg
 *.egg

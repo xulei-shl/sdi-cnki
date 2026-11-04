@@ -4,12 +4,17 @@
 
 | 项目 | 版本 |
 |------|------|
-| OS | Ubuntu 24.04 |
-| Python | 3.12.3（pyenv 虚拟环境） |
-| Node.js | 24.14.1 |
-| Playwright | 1.58.0 |
-| Camoufox | 0.4.11 |
-| Firefox | 146.0.1（Playwright 内置） |
+| OS | Ubuntu 24.04 / 26.04 均已实测 |
+| Python | 3.12.3（pyenv）/ 3.14.4（系统 Python + `python3 -m venv .venv`） |
+| Node.js | 24.14.1 / 22.x（以仓库 `.nvmrc` 为准，需 v22） |
+| Playwright | 1.58.0 / 1.62.0 |
+| Camoufox | 0.4.11 / 0.5.9 |
+| Firefox | Playwright 内置 |
+
+> **Python 解释器**：无论用 pyenv 还是系统 Python，都建议在项目根目录建独立虚拟环境
+> （`python3 -m venv .venv`），后文所有 `pip` / `python` / `playwright` / `alembic` 命令
+> 均以 `.venv/bin/` 为准，systemd `ExecStart` 也指向 `.venv/bin/python`，
+> 保证安装依赖与运行服务用的是同一个解释器。
 
 ## 更新已有部署（从 Git 拉取新代码后）
 
@@ -35,26 +40,31 @@ systemctl restart sdi-cnki-backend
 systemctl status sdi-cnki-backend --no-pager
 ```
 
-> 纯后端逻辑修改（如新增 API、修改 Worker 逻辑、调整配置等），**只需重启后端**。若新增了 Python 依赖，先执行 `pip install -r requirements.txt`。
+> 纯后端逻辑修改（如新增 API、修改 Worker 逻辑、调整配置等），**只需重启后端**。若新增了 Python 依赖，先执行 `.venv/bin/pip install -r requirements.txt`。
 
 ### 场景 C：后端代码变更 + 数据库变更
 
 ```bash
 git pull
-pip install -r requirements.txt
-alembic upgrade head
+.venv/bin/pip install -r requirements.txt
+PYTHONPATH=/opt/sdi-cnki .venv/bin/alembic upgrade head
 systemctl restart sdi-cnki-backend
 systemctl status sdi-cnki-backend --no-pager
 ```
 
 > `alembic upgrade head` 是增量迁移，仅应用尚未运行过的迁移脚本，不会丢失数据。迁移脚本位于 `alembic/versions/` 下。若同时涉及前端变更，可在**重启后端前**追加执行场景 A 的构建步骤。
+>
+> `alembic` 需要 `PYTHONPATH` 才能 `import app`（否则报 `No module named 'app'`）。
+> 另外**全新安装**时 `init_db()` 已用 `create_all` 按最新模型建表，再执行
+> `alembic upgrade head` 会报 `table ... already exists`——此时应改为
+> `PYTHONPATH=/opt/sdi-cnki .venv/bin/alembic stamp head`，仅把版本号标记为最新（详见「安装步骤」第 6 步）。
 
 ### 场景 D：全量更新（不确定变更范围）
 
 ```bash
 git pull
-pip install -r requirements.txt
-alembic upgrade head
+.venv/bin/pip install -r requirements.txt
+PYTHONPATH=/opt/sdi-cnki .venv/bin/alembic upgrade head
 npm install
 npm run build
 systemctl restart sdi-cnki-backend sdi-cnki-frontend
@@ -74,7 +84,7 @@ systemctl status sdi-cnki-backend sdi-cnki-frontend --no-pager
 
 ### 重启与运行中任务恢复（重要）
 
-> 后端 4 个 worker（cnki/llm/download/export）与 uvicorn **同进程**运行（`auto_start_workers`）。
+> 后端 5 个 worker（cnki/llm/jev/download/export）与 uvicorn **同进程**运行（`auto_start_workers`）。
 > 任何后端重启都会**中断正在执行的任务**：队列行停留在 `running`、任务实例停留在
 > `downloading`/`analyzing`。新启动的 worker 只拾取 `pending`/`retrying` 的任务，**不会自动接管**
 > 残留行——需等超时回收（下载默认 6 小时，`DOWNLOAD_TIMEOUT_SEC`）才会被标记失败并回退实例。
@@ -184,18 +194,30 @@ ss -tlnp | grep -E '(:8456|:8848)' && echo "⚠️ 端口被占用" || echo "✅
 | `run.py` | `uvicorn.run(port=...)` |
 | systemd service 文件 | `ExecStart` 中的 `--port` |
 
+若 8848 被占用，需修改：
+
+| 文件 | 字段 |
+|------|------|
+| `vite.config.ts` | `server.port` |
+| systemd service 文件 | `ExecStart` 中的 `--port` |
+
 ## 安装步骤
 
 ```bash
-# 1. Python 依赖（使用项目对应的 Python 解释器）
-pip install -r requirements.txt
+cd /opt/sdi-cnki
+
+# 0. 创建 Python 虚拟环境（已存在可跳过）
+python3 -m venv .venv
+
+# 1. Python 依赖
+.venv/bin/pip install -r requirements.txt
 
 # 2. Playwright Firefox（Camoufox 底层使用 Firefox，非 Chromium）
-playwright install firefox
-playwright install firefox --with-deps   # 首次安装系统共享库
+.venv/bin/playwright install firefox
+.venv/bin/playwright install firefox --with-deps   # 首次安装系统共享库
 
 # 3. 验证浏览器可启动
-python -c "from camoufox.sync_api import NewBrowser; print('camoufox OK')"
+PYTHONPATH=/opt/sdi-cnki .venv/bin/python -c "from camoufox.sync_api import NewBrowser; print('camoufox OK')"
 
 # 4. 前端依赖 & 构建
 npm install
@@ -205,7 +227,7 @@ npm run build
 mkdir -p data
 
 # 6. 初始化数据库（首次启动自动创建表 & 默认管理员）
-python -c "
+PYTHONPATH=/opt/sdi-cnki .venv/bin/python -c "
 import asyncio
 from app.database import init_db, engine
 async def s():
@@ -215,15 +237,28 @@ async def s():
 asyncio.run(s())
 "
 
+# 7. 首次安装：把 alembic 版本标记为最新（init_db 已按最新模型建表，
+#    此时执行 alembic upgrade head 会报 table already exists）
+PYTHONPATH=/opt/sdi-cnki .venv/bin/alembic stamp head
+PYTHONPATH=/opt/sdi-cnki .venv/bin/alembic current   # 应显示 010 (head)
+
 # 默认管理员账号：admin / admin123（由 init_db() 自动创建，仅空库时执行一次）
 ```
 
+> 此后有新迁移脚本时（场景 C/D），执行的是 `alembic upgrade head`（增量应用），不是 `stamp`。
+
 ## 防火墙
 
+> ⚠️ **启用前先确认机器上没有其他需要对外的服务**。`ufw --force enable` 后默认策略会阻断
+> 未放行的入站端口（包括 SSH 22），可能直接断掉远程访问。若服务器还运行着 1Panel、
+> Docker 容器、其他站点等，需先把这些端口一并 `ufw allow`，并确保 `ufw allow 22/tcp`
+> 在 `enable` 之前执行。不需要时可整节跳过——服务本身只依赖端口监听，不依赖 ufw。
+
 ```bash
-ufw --force enable
+ufw allow 22/tcp comment 'SSH'          # 必须先放行，防止远程失联
 ufw allow 8456/tcp comment 'SDI-CNKI Backend API'
 ufw allow 8848/tcp comment 'SDI-CNKI Frontend'
+ufw --force enable
 ufw status verbose
 ```
 
@@ -241,18 +276,21 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/opt/sdi-cnki
-ExecStart=/path/to/python3.12 -m uvicorn app.main:app --host 0.0.0.0 --port 8456
+ExecStart=/opt/sdi-cnki/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8456
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
-Environment=PATH=/path/to/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=PYTHONPATH=/opt/sdi-cnki
+Environment=PATH=/opt/sdi-cnki/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-> `ExecStart` 中的 `python3.12` 路径请替换为实际 Python 解释器路径（可通过 `which python3.12` 查看）。  
-> `auto_start_workers: true`（默认）使 4 个 Worker（cnki/llm/download/export）随 uvicorn 进程内嵌自动运行。
+> `ExecStart` 中的 Python 路径必须与安装依赖时用的解释器一致（本例为虚拟环境
+> `/opt/sdi-cnki/.venv/bin/python`，可用 `which python` 或 `ls .venv/bin/python` 确认）。
+> `PYTHONPATH` 保证 `app` 包可导入。
+> `auto_start_workers: true`（默认）使 5 个 Worker（cnki/llm/jev/download/export）随 uvicorn 进程内嵌自动运行。
 
 ### 2. 前端服务 `/etc/systemd/system/sdi-cnki-frontend.service`
 
@@ -267,21 +305,24 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/opt/sdi-cnki
-ExecStart=/usr/local/bin/npx vite --port 8848 --host 0.0.0.0
+ExecStart=/usr/bin/npx vite --port 8848 --host 0.0.0.0
 Restart=always
 RestartSec=5
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=PATH=/opt/sdi-cnki/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 
 [Install]
 WantedBy=multi-user.target
 ```
 
+> `npx` 路径用 `which npx` 确认（常见为 `/usr/bin/npx`，并非一定是 `/usr/local/bin/npx`）。
+> PATH 中加入 `node_modules/.bin` 使 `vite` 可被直接解析。执行 `npm install` 后 `vite` 才存在。
 > 前端自动反向代理 `/api` 请求到 `http://localhost:8456`，由 `vite.config.ts` 配置。
 
 ### 3. 启用并启动
 
 ```bash
-cp sdi-cnki-backend.service sdi-cnki-frontend.service /etc/systemd/system/
+cd /opt/sdi-cnki
+cp systemd/sdi-cnki-backend.service systemd/sdi-cnki-frontend.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now sdi-cnki-backend sdi-cnki-frontend
 systemctl status sdi-cnki-backend sdi-cnki-frontend --no-pager
@@ -355,10 +396,12 @@ journalctl -u sdi-cnki-frontend -n 50 --no-pager
 
 ## 常见问题
 
-- **`ModuleNotFoundError: No module named 'app'`** → 在项目根目录执行，或设置 `PYTHONPATH=/opt/sdi-cnki`
+- **`ModuleNotFoundError: No module named 'app'`** → 在项目根目录执行，或设置 `PYTHONPATH=/opt/sdi-cnki`（`alembic` 命令同样需要）
+- **`alembic upgrade head` 报 `table ... already exists`** → 全新安装时 `init_db()` 已按最新模型建表，改用 `alembic stamp head` 标记版本即可，之后有新迁移再用 `upgrade head`
 - **`playwright install firefox` 后仍报浏览器缺失** → 执行 `playwright install firefox --with-deps` 安装系统共享库
 - **Camoufox 初始化 TypeError** → `browser.py` 已内置 fallback 到标准 Playwright Firefox，无需干预
-- **`No module named 'sqlalchemy'` 等缺失包错误** → 确认 `pip install -r requirements.txt` 使用的 Python 解释器与 systemd `ExecStart` 中的路径一致
-- **端口 8000 被占用** → 该项目默认使用 **8456** 端口，若仍需调整请同步修改 `vite.config.ts`、`run.py` 和 systemd service 文件
+- **`No module named 'sqlalchemy'` 等缺失包错误** → 确认 `pip install -r requirements.txt` 使用的 Python 解释器与 systemd `ExecStart` 中的路径一致（建议统一用 `.venv`）
+- **端口 8000 被占用** → 该项目默认使用 **8456** 端口，若仍需调整请同步修改 `vite.config.ts`、`run.py` 和 systemd service 文件；**8848** 被占用则改 `vite.config.ts` 的 `server.port` 与前端 service 的 `--port`
 - **前端白屏 / API 请求 502** → 检查 vite 日志中反向代理目标地址是否指向正确的后端端口
-- **`src/lib/` 目录缺失导致前端构建失败** → 如果从旧版仓库克隆，需确保 `src/lib/http.ts`、`src/lib/utils.ts`、`src/lib/sse.ts` 三个文件存在
+- **`src/lib/` 目录缺失导致前端构建失败（`Cannot find module '@/lib/cache'`）** → `.gitignore` 中 Python 的 `lib/` 规则会误伤前端源码目录 `src/lib/`，导致其中文件不被 git 跟踪、克隆后缺失。仓库已在 `.gitignore` 加入 `!src/lib/` 放行；若你的本地克隆仍缺失，补齐 `src/lib/` 下的 `http.ts`、`utils.ts`、`sse.ts`、`cache.ts` 四个文件
+- **`git status` 看不到 `src/lib/` 下的新文件** → 检查 `.gitignore` 是否已包含 `!src/lib/`（在 `lib/` 规则之后）
