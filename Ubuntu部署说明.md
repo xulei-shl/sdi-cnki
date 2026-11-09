@@ -223,10 +223,15 @@ PYTHONPATH=/opt/sdi-cnki .venv/bin/python -c "from camoufox.sync_api import NewB
 npm install
 npm run build
 
-# 5. 确认数据目录
+# 5. 配置环境变量（后端由 app/config.py 从 .env 加载；Vite 仅向客户端暴露 VITE_*）
+cp -n .env.example .env   # 仅首次；已有 .env 不覆盖
+# 编辑 .env：填写 CNKI_* / LLM_CONFIG / API_KEY，并将 JWT_SECRET_KEY、AES_ENCRYPTION_KEY
+# 改为生产随机值。按需填写 VITE_HIAGENT_*。真实 .env 含密钥，勿提交（.gitignore 已忽略 .env*）。
+
+# 6. 确认数据目录
 mkdir -p data
 
-# 6. 初始化数据库（首次启动自动创建表 & 默认管理员）
+# 7. 初始化数据库（首次启动自动创建表 & 默认管理员）
 PYTHONPATH=/opt/sdi-cnki .venv/bin/python -c "
 import asyncio
 from app.database import init_db, engine
@@ -237,7 +242,7 @@ async def s():
 asyncio.run(s())
 "
 
-# 7. 首次安装：把 alembic 版本标记为最新（init_db 已按最新模型建表，
+# 8. 首次安装：把 alembic 版本标记为最新（init_db 已按最新模型建表，
 #    此时执行 alembic upgrade head 会报 table already exists）
 PYTHONPATH=/opt/sdi-cnki .venv/bin/alembic stamp head
 PYTHONPATH=/opt/sdi-cnki .venv/bin/alembic current   # 应显示 010 (head)
@@ -317,6 +322,7 @@ WantedBy=multi-user.target
 > `npx` 路径用 `which npx` 确认（常见为 `/usr/bin/npx`，并非一定是 `/usr/local/bin/npx`）。
 > PATH 中加入 `node_modules/.bin` 使 `vite` 可被直接解析。执行 `npm install` 后 `vite` 才存在。
 > 前端自动反向代理 `/api` 请求到 `http://localhost:8456`，由 `vite.config.ts` 配置。
+> 当前以前端 Vite 开发服务器方式提供 UI（含文件监听/HMR）。`vite.config.ts` 的 `server.watch.ignored` 需忽略 `data/`、`.venv/`、`logs/`、`cookies/`、`*.db*` 等运行时目录，否则后端写库/产生日志会触发页面持续刷新。若改为 `dist/` 静态托管 + Nginx/反代，请同步调整服务与 `/api` 代理。
 
 ### 3. 启用并启动
 
@@ -403,5 +409,6 @@ journalctl -u sdi-cnki-frontend -n 50 --no-pager
 - **`No module named 'sqlalchemy'` 等缺失包错误** → 确认 `pip install -r requirements.txt` 使用的 Python 解释器与 systemd `ExecStart` 中的路径一致（建议统一用 `.venv`）
 - **端口 8000 被占用** → 该项目默认使用 **8456** 端口，若仍需调整请同步修改 `vite.config.ts`、`run.py` 和 systemd service 文件；**8848** 被占用则改 `vite.config.ts` 的 `server.port` 与前端 service 的 `--port`
 - **前端白屏 / API 请求 502** → 检查 vite 日志中反向代理目标地址是否指向正确的后端端口
+- **浏览器页面持续自动刷新** → 多见于 Vite dev server 监听到运行时文件变化（如 `data/cnki_service.db`、WAL/日志）。确认 `vite.config.ts` 已配置 `server.watch.ignored`（`**/data/**`、`**/.venv/**`、`**/logs/**`、`**/cookies/**`、`**/*.db*`），重启 `sdi-cnki-frontend` 后在浏览器强制刷新（Ctrl+F5）；用 `journalctl -u sdi-cnki-frontend -n 60 --no-pager` 排查是否仍有文件变更触发的 reload
 - **`src/lib/` 目录缺失导致前端构建失败（`Cannot find module '@/lib/cache'`）** → `.gitignore` 中 Python 的 `lib/` 规则会误伤前端源码目录 `src/lib/`，导致其中文件不被 git 跟踪、克隆后缺失。仓库已在 `.gitignore` 加入 `!src/lib/` 放行；若你的本地克隆仍缺失，补齐 `src/lib/` 下的 `http.ts`、`utils.ts`、`sse.ts`、`cache.ts` 四个文件
 - **`git status` 看不到 `src/lib/` 下的新文件** → 检查 `.gitignore` 是否已包含 `!src/lib/`（在 `lib/` 规则之后）

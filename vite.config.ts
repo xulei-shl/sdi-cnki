@@ -44,6 +44,9 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 8848,
+    watch: {
+      ignored: ['**/data/**', '**/.venv/**', '**/logs/**', '**/cookies/**', '**/*.db', '**/*.db-*'],
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8456',
