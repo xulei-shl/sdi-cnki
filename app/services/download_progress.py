@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.download_result import DownloadResult
 from app.models.task_result import TaskResult
+from app.utils import timezone
 
 
 async def get_download_progress_stats(db: AsyncSession, instance_id: int) -> dict:
@@ -74,3 +75,50 @@ async def resolve_review_status(
     if stats["total"] > 0 and stats["success"] >= stats["total"]:
         return "completed"
     return "analyzing_completed"
+
+
+async def sync_review_status(db: AsyncSession, instance) -> str:
+    """人工审核/行级下载后重算实例状态（只前进，不回退、不覆盖其他状态）。
+
+    `batch-update` / 单条通过/拒绝只改 task_results，行级重试下载只改
+    download_results，实例状态却是派生值；不在此重算，用户「先逐条下载完再
+    批量拒绝剩余」或「审核完只逐条下载」后实例会永远停在审核中。
+
+    只在审核阶段（analyzing_completed）生效：分析/下载在途时状态由各自 worker 收尾，
+    完成态也不允许被审核动作改写。
+
+    额外要求「无待审核记录」：审核动作是逐条进行的，若只因已通过记录均已下载完
+    就置为 completed，会把仍在逐条审核的入口锁掉。批量下载那条路径已经用
+    resolve_review_status 表达“用户确认只下载已通过的”这一个显式选择，此处不重复。
+    """
+    if instance.status != "analyzing_completed":
+        return instance.status
+
+    unreviewed = (
+        await db.execute(
+            select(func.count(TaskResult.id)).where(
+                TaskResult.task_instance_id == instance.id,
+                TaskResult.is_duplicate == False,
+                TaskResult.is_passed == None,
+            )
+        )
+    ).scalar() or 0
+    if unreviewed:
+        return instance.status
+
+    status = await resolve_review_status(db, instance)
+    if status != "completed":
+        return instance.status
+
+    instance.status = "completed"
+    if not instance.completed_at:
+        instance.completed_at = timezone.now()
+    instance.error_message = None
+    await db.commit()
+
+    from app.routers.sse import broadcast_event
+    await broadcast_event(instance.id, "task.completed", {
+        "status": "completed",
+        "completed_at": instance.completed_at.isoformat(),
+    })
+    return instance.status

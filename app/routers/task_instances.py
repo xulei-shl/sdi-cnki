@@ -30,7 +30,7 @@ from app.utils.oplog import log_operation
 from app.routers import get_current_user_from_header
 from app.services.excel_parser import parse_excel_to_records
 from app.services.dedup_service import batch_check_and_mark
-from app.services.download_progress import get_download_progress_stats
+from app.services.download_progress import get_download_progress_stats, sync_review_status
 
 router = APIRouter()
 
@@ -547,14 +547,24 @@ async def batch_update_results(
         raise ValidationError("Invalid action")
     if not result_ids:
         raise ValidationError("result_ids is required")
+
+    inst = (
+        await db.execute(select(TaskInstance).where(TaskInstance.id == instance_id))
+    ).scalar_one_or_none()
+    if not inst:
+        raise NotFoundError("TaskInstance", instance_id)
+
     value = True if action == "pass" else False
     for rid in result_ids:
         r = await db.execute(select(TaskResult).where(TaskResult.id == rid, TaskResult.task_instance_id == instance_id))
         row = r.scalar_one_or_none()
         if row:
             row.is_passed = value
+
+    # 审核通过集合变了 → 实例状态（派生值）要重算，否则批量操作完仍停在「审核中」
+    await sync_review_status(db, inst)
     await db.commit()
-    return {"message": f"{len(result_ids)} results updated"}
+    return {"message": f"{len(result_ids)} results updated", "status": inst.status}
 
 
 @router.post("/{instance_id}/download")
@@ -692,12 +702,6 @@ async def retry_single_download(
                 task_result.local_pdf_path = str(pdf_path)
 
             await db.commit()
-            return {
-                "id": download_result.id,
-                "download_status": download_result.download_status,
-                "pdf_path": download_result.pdf_path or None,
-                "file_size": download_result.file_size or None,
-            }
 
         except Exception as e:
             _log.error(f"单条重试下载失败 [result_id={result_id}]: {e}", exc_info=True)
@@ -721,6 +725,20 @@ async def retry_single_download(
                 "pdf_path": None,
                 "file_size": None,
             }
+
+    # 成功收尾放在 except 之外：状态重算/广播出错不得把已成功的下载改判为失败。
+    # 行级下载也改变「已下载集合」：审核已全部结束、通过的记录又都逐条下完时，
+    # 不重算就会永远停在「审核中」（用户从未点过批量下载）。
+    # sync_review_status 自带「无待审核记录」守卫，审核中途不会锁掉审核入口。
+    if pdf_path:
+        await sync_review_status(db, inst)
+
+    return {
+        "id": download_result.id,
+        "download_status": download_result.download_status,
+        "pdf_path": download_result.pdf_path or None,
+        "file_size": download_result.file_size or None,
+    }
 
 
 @router.post("/{instance_id}/retry-analysis")

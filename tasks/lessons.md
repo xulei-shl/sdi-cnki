@@ -33,9 +33,11 @@
 - **教训**: “是否已终态”这条规则不能由每个 worker 各自实现。凡是在审核/下载阶段结束时决定实例状态的路径，**必须**复用数据派生的 `app/services/download_progress.py:resolve_review_status()`，不得写死常量。新增此类路径时同样适用。
 - **验证方式**: `tests/test_review_status.py` 钉死该不变量；已反向验证（把判定退回“写死常量”后用例确实失败）。
 
-### 不是 Bug: 行级「下载」按钮不修改实例状态
-- **约定**: `POST /{instance_id}/results/{result_id}/retry-download` **有意**不修改实例状态（见 2026-05-18 条目）。
-- **由此产生的正常现象**: 用户逐条下载完所有已通过记录、但从未点过批量「下载」时，实例会一直停在「审核中」，`download_started_at` 为 `NULL`（实例 T20260608002 即如此）。这是操作顺序问题，**不要**为此把行级下载改成会推进终态——那会让实例变 `completed`，而前端 `isEditableStatus` 只含 `analyzing_completed`/`downloading`，「下载」与审核入口会随之消失，反而锁死用户。
+### 约定: 行级「下载」不单独推进终态，但带守卫收尾（2026-11-15 修订）
+- **现约定**: `POST /{instance_id}/results/{result_id}/retry-download` 下载成功后调用 `sync_review_status`，**仅当**「无待审核记录」且「审核通过记录已全部下载成功」时置 `completed`；其余情况保持 `analyzing_completed`。
+- **历史**: 此前完全不修改实例状态。理由是无条件推进会让实例在审核中途变 `completed`，而前端 `isEditableStatus` 只含 `analyzing_completed`/`downloading`，「下载」与审核入口会随之消失，反而锁死用户。该风险现由 `sync_review_status` 的「无待审核记录」守卫消除——仍有 `is_passed IS NULL` 的记录时直接返回，不得绕过守卫单独调用 `resolve_review_status` 并写状态。
+- **由此产生的正常现象**: 逐条下载完所有已通过记录、但仍有未审核记录时，实例停在「审核中」是**有意**的（还要继续审核）。要跳过剩余审核，点批量「PDF 下载」（前端会二次确认），由 `download_worker` 的 `resolve_review_status` 按数据收尾。
+- **验证方式**: `tests/test_review_status.py` 中两个行级用例钉死正反两面（审核已结束→completed；仍有待审核→保持审核中）。
 
 ## 2026-09-30: API 作业在队列层失败后实例永久卡在 search_queued
 
@@ -100,7 +102,7 @@
 
 ### Feature: 单条重试下载
 - **需求**: task-result 页面，已通过人工审核但下载状态为"未下载"/"失败"/"跳过"的记录可逐条重试下载
-- **设计**: 新增 `POST /{instance_id}/results/{result_id}/retry-download` 端点，同步执行单条 PDF 下载，创建/更新 `DownloadResult`，不修改实例状态
+- **设计**: 新增 `POST /{instance_id}/results/{result_id}/retry-download` 端点，同步执行单条 PDF 下载，创建/更新 `DownloadResult`。下载成功且审核已全部结束时由 `sync_review_status` 收尾（2026-11-15 起；此前完全不修改实例状态）
 - **导出兼容**: 导出模块读取 `DownloadResult.pdf_path`，单条下载成功后导出时自动包含该 PDF 及 Excel 中 PDF 文件列路径
 - **按钮**: 每条记录操作列新增"下载"按钮，与原有"PDF 下载"按钮并存：前者是单条重试（下载完成后可见），后者是批量发起（下载前可见）
 

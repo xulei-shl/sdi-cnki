@@ -199,6 +199,8 @@ export default function TaskResultPage() {
       if (downloadStatus === 'completed') toast.success('下载成功')
       else if (downloadStatus === 'failed') toast.error('下载失败')
       setResults(prev => prev.map(r => r.id === row.id ? { ...r, download: { ...r.download, download_status: downloadStatus, pdf_path: res.data.pdf_path ?? r.download?.pdf_path, file_size: res.data.file_size ?? r.download?.file_size } } : r))
+      // 最后一条下载成功后实例可能已收尾为已完成（后端派生并广播），主动刷新状态
+      if (downloadStatus === 'completed') fetchInstance()
     } catch { toast.error('下载请求失败') }
     finally {
       setDownloadingIds(prev => {
@@ -309,6 +311,7 @@ export default function TaskResultPage() {
           toast.success(`已通过 ${ids.length} 条`)
           setSelectedIds(new Set())
           setResults(prev => prev.map(r => ids.includes(r.id) ? { ...r, is_passed: true } : r))
+          fetchInstance()
           break
         }
         case 'batch-reject': {
@@ -318,6 +321,7 @@ export default function TaskResultPage() {
           toast.success(`已拒绝 ${ids.length} 条`)
           setSelectedIds(new Set())
           setResults(prev => prev.map(r => ids.includes(r.id) ? { ...r, is_passed: false } : r))
+          fetchInstance()
           break
         }
         case 'download': {
@@ -326,6 +330,10 @@ export default function TaskResultPage() {
           break
         }
         case 'download-unreviewed': {
+          // 未审核记录不会被下载（下载只取 is_passed=True），这里只下载已通过的记录。
+          // 允许继续是有意的：用户可以只下载自己审核通过的部分，不强制先审完剩下的。
+          await startDownload(instanceId)
+          toast.success('下载任务已加入队列（未审核记录不会被下载）')
           break
         }
         case 'retry-analysis': {
@@ -511,7 +519,7 @@ export default function TaskResultPage() {
             confirmAction?.type === 'batch-reject' ? `确认批量拒绝选中的 ${confirmAction.count} 项结果？` :
               confirmAction?.type === 'export' ? '确认导出当前任务的所有搜索结果？此操作将导出数据为 Excel 文件。' :
                 confirmAction?.type === 'retry-analysis' ? '确认重新运行 LLM 分析？此操作将重新分析所有搜索结果。' :
-                  confirmAction?.type === 'download-unreviewed' ? `存在 ${confirmAction.count} 条LLM分析通过但未人工审核的记录，请先完成人工审核后再执行批量下载。` :
+                  confirmAction?.type === 'download-unreviewed' ? `存在 ${confirmAction.count} 条LLM分析通过但未人工审核的记录。未审核记录不会被下载，仅下载已通过的记录；下载完成后实例可能直接进入「已完成」。确认继续？` :
                     '确认下载所有结果的 PDF 文件？'
         }
         variant={confirmAction?.type === 'batch-reject' || confirmAction?.type === 'download-unreviewed' ? 'destructive' : 'default'}

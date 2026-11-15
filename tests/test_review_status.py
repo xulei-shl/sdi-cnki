@@ -10,9 +10,11 @@
 """
 import sys; sys.path.insert(0, '.')
 
+import asyncio
 import json
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -303,6 +305,193 @@ async def test_download_partial_failure_stays_in_review(env, monkeypatch):
 # ═══════════════════════════════════════════════════════════
 #  llm_worker —— 重跑分析不得覆盖终态
 # ═══════════════════════════════════════════════════════════
+
+
+# ═══════════════════════════════════════════════════════════
+#  人工审核动作 —— 审核通过集合变化后重算派生状态
+# ═══════════════════════════════════════════════════════════
+
+
+async def _unreviewed_ids(db, instance_id: int) -> list[int]:
+    return list(
+        (
+            await db.execute(
+                select(TaskResult.id).where(
+                    TaskResult.task_instance_id == instance_id,
+                    TaskResult.is_passed == None,
+                )
+            )
+        ).scalars().all()
+    )
+
+
+@pytest.mark.asyncio
+async def test_batch_reject_remaining_completes_instance(env):
+    """场景：已审核通过的记录全部下载成功，再把剩余记录批量拒绝 → 应进入已完成。
+
+    审核接口只改 task_results，若不重算派生状态，实例会一直停在「审核中」。
+    """
+    from app.routers.task_instances import batch_update_results
+
+    async with env["factory"]() as db:
+        iid = await _make_instance(
+            db, env, instance_no="T-R5", approved=2, downloaded=2, unreviewed=2
+        )
+        ids = await _unreviewed_ids(db, iid)
+        user = (await db.execute(select(User).where(User.id == env["user_id"]))).scalar_one()
+
+        await batch_update_results(
+            instance_id=iid,
+            data={"action": "reject", "result_ids": ids},
+            current_user=user,
+            db=db,
+        )
+
+        inst = await _load_inst(db, iid)
+        assert inst.status == "completed"
+        assert inst.completed_at is not None
+        assert inst.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_batch_reject_remaining_with_pending_download_stays_in_review(env):
+    """审核动作不得把「还有已通过记录未下载成功」的实例误判为已完成。"""
+    from app.routers.task_instances import batch_update_results
+
+    async with env["factory"]() as db:
+        iid = await _make_instance(
+            db, env, instance_no="T-R6", approved=2, downloaded=1, unreviewed=1
+        )
+        ids = await _unreviewed_ids(db, iid)
+        user = (await db.execute(select(User).where(User.id == env["user_id"]))).scalar_one()
+
+        await batch_update_results(
+            instance_id=iid,
+            data={"action": "reject", "result_ids": ids},
+            current_user=user,
+            db=db,
+        )
+
+        assert (await _load_inst(db, iid)).status == "analyzing_completed"
+
+
+@pytest.mark.asyncio
+async def test_reject_does_not_lock_review_while_records_remain_unreviewed(env):
+    """还有待审核记录时，审核动作不得把实例置为已完成（否则审核入口消失）。"""
+    from app.routers.task_instances import batch_update_results
+
+    async with env["factory"]() as db:
+        iid = await _make_instance(
+            db, env, instance_no="T-R8", approved=2, downloaded=2, unreviewed=3
+        )
+        ids = await _unreviewed_ids(db, iid)
+        user = (await db.execute(select(User).where(User.id == env["user_id"]))).scalar_one()
+
+        await batch_update_results(
+            instance_id=iid,
+            data={"action": "reject", "result_ids": ids[:1]},
+            current_user=user,
+            db=db,
+        )
+
+        assert (await _load_inst(db, iid)).status == "analyzing_completed"
+
+
+@pytest.mark.asyncio
+async def test_single_reject_remaining_completes_instance(env):
+    """逐条拒绝到最后一条时，同样应推进到已完成。"""
+    from app.routers.task_results import mark_reject
+
+    async with env["factory"]() as db:
+        iid = await _make_instance(
+            db, env, instance_no="T-R7", approved=2, downloaded=2, unreviewed=1
+        )
+        ids = await _unreviewed_ids(db, iid)
+        user = (await db.execute(select(User).where(User.id == env["user_id"]))).scalar_one()
+
+        await mark_reject(result_id=ids[0], current_user=user, db=db)
+
+        inst = await _load_inst(db, iid)
+        assert inst.status == "completed"
+        assert inst.completed_at is not None
+
+
+async def _approved_pending_id(db, instance_id: int) -> int | None:
+    """取一条「已通过但还没有 DownloadResult」的记录（行级下载的合法对象）。"""
+    stmt = (
+        select(TaskResult.id)
+        .outerjoin(DownloadResult, DownloadResult.task_result_id == TaskResult.id)
+        .where(
+            TaskResult.task_instance_id == instance_id,
+            TaskResult.is_passed == True,
+            DownloadResult.id == None,
+        )
+    )
+    return (await db.execute(stmt)).scalars().first()
+
+
+@pytest.mark.asyncio
+async def test_row_download_completes_when_review_finished(env, monkeypatch, tmp_path):
+    """逐条审核完并逐条下载完最后一条 → 实例应结束「审核中」。
+
+    这是「只点行级下载、从不点批量下载」的收尾路径；若行级下载不重算，
+    用户全部做完后实例仍停在 analyzing_completed。
+    """
+    from app.routers import task_instances as router_mod
+    from app.services import pdf_downloader
+
+    pdf_file = tmp_path / "paper.pdf"
+    pdf_file.write_bytes(b"%PDF-1.4 test")
+    monkeypatch.setattr(pdf_downloader, "download_pdf", lambda **kwargs: pdf_file)
+    monkeypatch.setattr(
+        router_mod, "settings", SimpleNamespace(downloads_dir=str(tmp_path))
+    )
+    monkeypatch.setattr(router_mod, "_single_dl_lock", asyncio.Lock())
+
+    async with env["factory"]() as db:
+        iid = await _make_instance(
+            db, env, instance_no="T-R9", approved=2, downloaded=1
+        )
+        rid = await _approved_pending_id(db, iid)
+        user = (await db.execute(select(User).where(User.id == env["user_id"]))).scalar_one()
+
+        res = await router_mod.retry_single_download(
+            instance_id=iid, result_id=rid, current_user=user, db=db
+        )
+
+        assert res["download_status"] == "completed"
+        inst = await _load_inst(db, iid)
+        assert inst.status == "completed"
+        assert inst.completed_at is not None
+        assert inst.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_row_download_does_not_lock_review_while_records_remain(env, monkeypatch, tmp_path):
+    """还有待审核记录时，行级下载不得把实例置为已完成（审核入口会被隐藏）。"""
+    from app.routers import task_instances as router_mod
+    from app.services import pdf_downloader
+
+    pdf_file = tmp_path / "paper.pdf"
+    pdf_file.write_bytes(b"%PDF-1.4 test")
+    monkeypatch.setattr(pdf_downloader, "download_pdf", lambda **kwargs: pdf_file)
+    monkeypatch.setattr(
+        router_mod, "settings", SimpleNamespace(downloads_dir=str(tmp_path))
+    )
+    monkeypatch.setattr(router_mod, "_single_dl_lock", asyncio.Lock())
+
+    async with env["factory"]() as db:
+        iid = await _make_instance(
+            db, env, instance_no="T-R10", approved=1, unreviewed=1
+        )
+        rid = await _approved_pending_id(db, iid)
+        user = (await db.execute(select(User).where(User.id == env["user_id"]))).scalar_one()
+
+        await router_mod.retry_single_download(
+            instance_id=iid, result_id=rid, current_user=user, db=db
+        )
+
+        assert (await _load_inst(db, iid)).status == "analyzing_completed"
 
 
 @pytest.mark.asyncio
