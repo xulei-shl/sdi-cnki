@@ -5,6 +5,8 @@ import { DetailPanel, DetailSection, DetailRow } from '@/components/layout/detai
 import { DOWNLOAD_BADGE } from './constants'
 
 const LLM_LABEL_MAP: Record<string, string> = {
+  actual_discipline: '实际学科领域',
+  term_sense_in_paper: '术语在文中含义',
   is_target_topic: '是否相关',
   relevance_score: '相关性评分',
   relevance_level: '相关性等级',
