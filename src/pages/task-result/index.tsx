@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { AxiosError } from 'axios'
 import { toast } from 'sonner'
-import { getTaskInstance, importExcelResults } from '@/api/task-instances'
+import { getTaskInstance, importExcelResults, completeTaskInstance } from '@/api/task-instances'
 import { getTaskResults, markPass, markReject, batchUpdateResults, startDownload, startExport, getExportStatus, retryAnalysis, downloadExportFile, retryDownload, getDownloadProgress, invalidateTaskResultsCache } from '@/api/task-results'
 import { SseClient } from '@/lib/sse'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -278,6 +278,7 @@ export default function TaskResultPage() {
     }
   }
   const handleRetryAnalysis = () => { if (!retrying) setConfirmAction({ type: 'retry-analysis' }) }
+  const handleComplete = () => setConfirmAction({ type: 'complete' })
   const handleExport = () => { if (!exporting) setConfirmAction({ type: 'export' }) }
 
   const handleImportExcel = async () => {
@@ -334,6 +335,13 @@ export default function TaskResultPage() {
           // 允许继续是有意的：用户可以只下载自己审核通过的部分，不强制先审完剩下的。
           await startDownload(instanceId)
           toast.success('下载任务已加入队列（未审核记录不会被下载）')
+          break
+        }
+        case 'complete': {
+          await completeTaskInstance(instanceId)
+          toast.success('批次已结束')
+          fetchInstance()
+          fetchResults()
           break
         }
         case 'retry-analysis': {
@@ -393,6 +401,9 @@ export default function TaskResultPage() {
   // ── Derived flags ──
   const instanceStatus = instance?.status || ''
   const isEditableStatus = ['analyzing_completed', 'downloading'].includes(instanceStatus)
+  const canComplete = instanceStatus === 'analyzing_completed'
+  const unreviewedForComplete = Math.max(0,
+    (instance?.valid_data_count || 0) - (instance?.manual_review_passed_count || 0) - (instance?.manual_review_rejected_count || 0))
   const isMoreMenuVisible = ['analyzing_completed', 'download_queued', 'downloading', 'completed', 'failed'].includes(instanceStatus)
   const canRetryAnalysis = ['analyzing_completed', 'downloading', 'completed', 'failed'].includes(instanceStatus)
 
@@ -450,6 +461,7 @@ export default function TaskResultPage() {
                 exporting={exporting}
                 retrying={retrying}
                 canDownload={isEditableStatus}
+                canComplete={canComplete}
                 canShowMore={isMoreMenuVisible}
                 canRetryAnalysis={canRetryAnalysis}
                 onAnalysisStatusChange={(v) => { setAnalysisStatus(v); resetPage() }}
@@ -464,6 +476,7 @@ export default function TaskResultPage() {
                 onBatchPass={handleBatchPass}
                 onBatchReject={handleBatchReject}
                 onDownload={handleDownload}
+                onComplete={handleComplete}
                 onExport={handleExport}
                 onRetryAnalysis={handleRetryAnalysis}
                 onMoreToggle={() => setMoreOpen(v => !v)}
@@ -512,6 +525,7 @@ export default function TaskResultPage() {
               confirmAction?.type === 'export' ? '导出确认' :
                 confirmAction?.type === 'retry-analysis' ? 'LLM 分析确认' :
                   confirmAction?.type === 'download-unreviewed' ? '存在未审核记录' :
+                    confirmAction?.type === 'complete' ? '结束批次' :
                     '下载确认'
         }
         description={
@@ -520,6 +534,7 @@ export default function TaskResultPage() {
               confirmAction?.type === 'export' ? '确认导出当前任务的所有搜索结果？此操作将导出数据为 Excel 文件。' :
                 confirmAction?.type === 'retry-analysis' ? '确认重新运行 LLM 分析？此操作将重新分析所有搜索结果。' :
                   confirmAction?.type === 'download-unreviewed' ? `存在 ${confirmAction.count} 条LLM分析通过但未人工审核的记录。未审核记录不会被下载，仅下载已通过的记录；下载完成后实例可能直接进入「已完成」。确认继续？` :
+                    confirmAction?.type === 'complete' ? `结束后该批次将固定为「已完成」，不再根据审核/下载结果自动变化。当前还有未审核 ${unreviewedForComplete} 条、下载失败 ${instance?.download_failed_count || 0} 条，记录均会保留，未下载的记录仍可在表格行级继续重试下载。确认结束？` :
                     '确认下载所有结果的 PDF 文件？'
         }
         variant={confirmAction?.type === 'batch-reject' || confirmAction?.type === 'download-unreviewed' ? 'destructive' : 'default'}

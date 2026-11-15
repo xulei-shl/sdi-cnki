@@ -822,17 +822,31 @@ async def complete_task_instance(
         raise NotFoundError("TaskInstance", instance_id)
     if current_user.role != "admin" and inst.creator_id != current_user.id:
         raise PermissionDeniedError()
-    if inst.status != "search_completed":
+    if inst.status not in ("search_completed", "analyzing_completed"):
         raise ValidationError(f"Cannot complete instance with status: {inst.status}")
+    # 审核阶段手动结束批次（例如部分记录 PDF 永久下载失败，永远无法由数据派生为完成）。
+    # 有在途下载任务时拒绝：否则 worker 收尾会按数据重算，把手动完成的状态改回审核中。
+    if inst.status == "analyzing_completed":
+        dl_row = (
+            await db.execute(
+                select(TaskQueueItem).where(
+                    TaskQueueItem.task_key == f"download_{inst.instance_no}"
+                )
+            )
+        ).scalar_one_or_none()
+        if dl_row and dl_row.status in ("pending", "retrying", "running"):
+            raise ValidationError("该实例仍有下载任务未结束，请等待下载完成后再结束批次")
     inst.status = "completed"
     inst.completed_at = timezone.now()
+    inst.error_message = None
     await db.commit()
     from app.routers.sse import broadcast_event
     await broadcast_event(instance_id, "task.completed", {
         "status": "completed",
-        "completed_at": timezone.now().isoformat(),
+        "completed_at": inst.completed_at.isoformat(),
     })
-    await log_operation(db, current_user.id, "complete", "task_instance", instance_id, f"Complete instance {inst.instance_no}")
+    await log_operation(db, current_user.id, "complete", "task_instance", instance_id,
+                        f"Complete instance {inst.instance_no}")
     return {"message": "Instance completed"}
 
 

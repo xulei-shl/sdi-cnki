@@ -543,3 +543,53 @@ async def test_retry_analysis_does_not_downgrade_completed(env, monkeypatch):
         inst = await _load_inst(db, iid)
         assert inst.status == "completed", "重跑分析不得把已完成实例打回审核中"
         assert inst.completed_at is not None
+
+
+# ═══════════════════════════════════════════════════════════
+#  手动结束批次 —— 下载永久失败的出口
+# ═══════════════════════════════════════════════════════════
+
+
+@pytest.mark.asyncio
+async def test_manual_complete_closes_stuck_batch(env):
+    """有记录永久下载失败时，用户手动结束批次 → 直接完成并清除错误提示。"""
+    from app.routers.task_instances import complete_task_instance
+
+    async with env["factory"]() as db:
+        iid = await _make_instance(
+            db, env, instance_no="T-C1", approved=2, downloaded=1, failed=1, unreviewed=1
+        )
+        inst = await _load_inst(db, iid)
+        inst.error_message = "部分记录下载失败，可在表格行级点“下载”按钮单独重试"
+        await db.commit()
+        user = (await db.execute(select(User).where(User.id == env["user_id"]))).scalar_one()
+
+        await complete_task_instance(instance_id=iid, current_user=user, db=db)
+
+        inst = await _load_inst(db, iid)
+        assert inst.status == "completed"
+        assert inst.completed_at is not None
+        assert inst.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_manual_complete_rejected_while_download_in_flight(env):
+    """下载任务在途时拒绝手动完成，避免 worker 收尾把状态改回审核中。"""
+    from app.routers.task_instances import complete_task_instance
+    from app.utils.exceptions import ValidationError
+
+    async with env["factory"]() as db:
+        iid = await _make_instance(
+            db, env, instance_no="T-C2", approved=2, downloaded=1, failed=1
+        )
+        item_id = await _enqueue_download(db, iid, "T-C2")
+        await db.execute(
+            update(TaskQueueItem).where(TaskQueueItem.id == item_id).values(status="running")
+        )
+        await db.commit()
+        user = (await db.execute(select(User).where(User.id == env["user_id"]))).scalar_one()
+
+        with pytest.raises(ValidationError):
+            await complete_task_instance(instance_id=iid, current_user=user, db=db)
+
+        assert (await _load_inst(db, iid)).status == "analyzing_completed"

@@ -39,6 +39,13 @@
 - **由此产生的正常现象**: 逐条下载完所有已通过记录、但仍有未审核记录时，实例停在「审核中」是**有意**的（还要继续审核）。要跳过剩余审核，点批量「PDF 下载」（前端会二次确认），由 `download_worker` 的 `resolve_review_status` 按数据收尾。
 - **验证方式**: `tests/test_review_status.py` 中两个行级用例钉死正反两面（审核已结束→completed；仍有待审核→保持审核中）。
 
+### 约定: 审核阶段可由用户手动「结束批次」（2026-11-15）
+- **背景**: 部分记录 PDF 永久下载失败（知网无全文/权限/匹配不上）时，`resolve_review_status` 永远无法派生 `completed`，批次会永久停在「审核中」。
+- **规则**: `POST /{instance_id}/complete` 允许对 `search_completed` 与 `analyzing_completed` 生效，后者是显式人工关闭：写 `completed`、补 `completed_at`、清 `error_message`，**不改任何结果/下载记录**。不走 `resolve_review_status`——这是用户的显式决定，不是数据派生。
+- **守卫**: `downloading` / `download_queued` 拒绝；同一实例存在 `pending`/`retrying`/`running` 的下载队列行也拒绝，否则 worker 收尾会按数据重算，把状态改回 `analyzing_completed`。
+- **后续影响**: 完成后 `sync_review_status` 不再生效（它只处理 `analyzing_completed`），行级重试下载仍可用且不会把状态改回去；前端在确认弹窗里展示未审核/下载失败条数，由用户确认关闭。
+- **验证方式**: `tests/test_review_status.py` 的 `test_manual_complete_closes_stuck_batch` 与 `test_manual_complete_rejected_while_download_in_flight`。
+
 ## 2026-09-30: API 作业在队列层失败后实例永久卡在 search_queued
 
 ### Bug: 业务对象回收靠 `task_key` 反查实例，而 task_key 被覆盖

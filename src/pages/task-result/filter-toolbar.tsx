@@ -21,6 +21,7 @@ interface FilterToolbarProps {
   exporting: boolean
   retrying: boolean
   canDownload: boolean
+  canComplete: boolean
   canShowMore: boolean
   canRetryAnalysis: boolean
   onAnalysisStatusChange: (v: string) => void
@@ -35,6 +36,7 @@ interface FilterToolbarProps {
   onBatchPass: () => void
   onBatchReject: () => void
   onDownload: () => void
+  onComplete: () => void
   onExport: () => void
   onRetryAnalysis: () => void
   onMoreToggle: () => void
@@ -57,6 +59,7 @@ export function FilterToolbar({
   exporting,
   retrying,
   canDownload,
+  canComplete,
   canShowMore,
   canRetryAnalysis,
   onAnalysisStatusChange,
@@ -71,6 +74,7 @@ export function FilterToolbar({
   onBatchPass,
   onBatchReject,
   onDownload,
+  onComplete,
   onExport,
   onRetryAnalysis,
   onMoreToggle,
@@ -111,6 +115,9 @@ export function FilterToolbar({
         <Button size="sm" variant="outline" disabled={selectedCount === 0} onClick={onBatchReject}>批量拒绝</Button>
         {canDownload && (
           <Button size="sm" variant="outline" onClick={onDownload}>PDF 下载</Button>
+        )}
+        {canComplete && (
+          <Button size="sm" variant="outline" onClick={onComplete}>结束批次</Button>
         )}
         <label className="flex items-center gap-1 text-sm bg-accent/50 px-2 py-1.5 rounded-md cursor-pointer hover:bg-accent/80 transition-colors">
           <Checkbox checked={includePdfs} onChange={(e) => { onIncludePdfsChange(e.target.checked) }} />
