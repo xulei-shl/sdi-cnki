@@ -29,7 +29,7 @@ export default function LlmConfigPage() {
 
   const isJev = configType === 'jev'
   const JEV_ENDPOINT_PLACEHOLDER = 'https://api.typesafe.ai/v1/systemone'
-  const endpointPlaceholder = isJev ? JEV_ENDPOINT_PLACEHOLDER : 'https://api.openai.com/v1'
+  const endpointPlaceholder = isJev ? JEV_ENDPOINT_PLACEHOLDER : 'https://api.openai.com'
   const modelPlaceholder = isJev ? 'jev-latest' : 'gpt-4o'
 
   const fetchData = async (opts?: { fresh?: boolean }) => {
@@ -236,6 +236,7 @@ export default function LlmConfigPage() {
             <div className="space-y-1">
               <Label>API 端点 <span className="text-destructive">*</span></Label>
               <Input value={apiEndpoint} onChange={(e) => setApiEndpoint(e.target.value)} placeholder={endpointPlaceholder} />
+              {!isJev && <p className="text-xs text-muted-foreground">填写服务地址前缀，系统会自动追加 /v1/chat/completions</p>}
             </div>
             <div className="flex items-center gap-2">
               <Switch checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
